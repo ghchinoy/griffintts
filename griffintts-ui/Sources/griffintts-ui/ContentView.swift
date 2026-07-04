@@ -198,27 +198,36 @@ struct ContentView: View {
         let wavPath = "/tmp/griffintts-ui.wav"
         
         Task {
-            // 1. START TIMINGS FETCH IN PARALLEL! (Asynchronous background Task)
-            logDebug("[Timing] Launching parallel fetchTokenTimings task...")
-            async let timingsFetch: [TokenTime] = {
-                if !native {
-                    return await fetchTokenTimings(text: t)
-                }
-                return []
-            }()
+            // 1. FETCH TIMINGS FIRST (Takes only ~100ms, completely imperceptible!)
+            logDebug("[Timing] Fetching token timings from container...")
+            var timings: [TokenTime] = []
+            if !native {
+                timings = await fetchTokenTimings(text: t)
+            }
+            logDebug("[Timing] Timings fetched. Received \(timings.count) tokens.")
             
-            // 2. RUN CLI SUBPROCESS IN PARALLEL!
+            // Calculate exact speech duration (end of last token + 350ms silence + 50ms comfort padding)
+            var speechDuration: Double = 0.0
+            if let lastToken = timings.last {
+                speechDuration = lastToken.end + 0.40
+                logDebug("[Timing] Calculated exact audio duration: \(String(format: "%.3f", speechDuration))s (Last Token: '\(lastToken.name)' ends at \(lastToken.end)s)")
+            }
+            
+            // 2. RUN CLI SUBPROCESS WITH EXPLICIT DURATION CROPPING FLAG!
             let ttsBin = "/Users/ghchinoy/projects/jibo/tools/bin/griffintts"
             
-            let argsList = ["--ow", wavPath]
-            var finalArgs = argsList
+            var finalArgs = ["--ow", wavPath]
             if native {
                 finalArgs.append("--native")
+            } else if speechDuration > 0.0 {
+                finalArgs.append("--duration")
+                finalArgs.append(String(format: "%.2f", speechDuration))
             }
             finalArgs.append(t)
             
             logDebug("[Subprocess] Spawning Go CLI subprocess: \(ttsBin) \(finalArgs.joined(separator: " "))")
             let success = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                // Isolated, non-capturing background thread execution to prevent warnings
                 let argsToPass = finalArgs
                 DispatchQueue.global(qos: .userInitiated).async {
                     let task = Process()
@@ -239,11 +248,6 @@ struct ContentView: View {
                 }
             }
             logDebug("[Subprocess] Go CLI subprocess completed. Success status: \(success)")
-            
-            // 3. AWAIT TIMINGS FETCH RESOLUTION (Will likely already be completed in parallel!)
-            logDebug("[Timing] Awaiting parallel timingsFetch resolution...")
-            let timings = await timingsFetch
-            logDebug("[Timing] timingsFetch resolved. Fetched \(timings.count) tokens.")
             
             if !success {
                 statusMessage = "Synthesis failed!"

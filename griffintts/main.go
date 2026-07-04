@@ -36,12 +36,13 @@ type JSONOutput struct {
 }
 
 var (
-	outputWav  string
-	host       string
-	port       string
-	jsonOut    bool
-	dryRun     bool
-	nativeMode bool
+	outputWav     string
+	host          string
+	port          string
+	jsonOut       bool
+	dryRun        bool
+	nativeMode    bool
+	durationLimit float64
 )
 
 const sharedVolumeDir = "/tmp/griffintts-shared"
@@ -85,6 +86,7 @@ native macOS standalone HTS synthesizer using Jibo's classic en_us model.`,
 	rootCmd.Flags().BoolVar(&jsonOut, "json", false, "Output in machine-readable JSON format (AX)")
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Dry run validation without modifying files or triggering synthesis (AX)")
 	rootCmd.Flags().BoolVarP(&nativeMode, "native", "n", false, "Use the 100% native macOS HTS standalone synthesizer (no containers)")
+	rootCmd.Flags().Float64VarP(&durationLimit, "duration", "d", 0.0, "Crop the output audio to this duration in seconds (0.0 to disable trimming)")
 
 	// Bind flags to Viper
 	viper.BindPFlag("ow", rootCmd.Flags().Lookup("ow"))
@@ -93,6 +95,7 @@ native macOS standalone HTS synthesizer using Jibo's classic en_us model.`,
 	viper.BindPFlag("json", rootCmd.Flags().Lookup("json"))
 	viper.BindPFlag("dry-run", rootCmd.Flags().Lookup("dry-run"))
 	viper.BindPFlag("native", rootCmd.Flags().Lookup("native"))
+	viper.BindPFlag("duration", rootCmd.Flags().Lookup("duration"))
 
 	viper.SetEnvPrefix("GRIFFINTTS")
 	viper.AutomaticEnv()
@@ -109,6 +112,7 @@ func executeSynthesis(args []string) {
 	isJSON := viper.GetBool("json")
 	isDryRun := viper.GetBool("dry-run")
 	isNative := viper.GetBool("native")
+	targetDuration := viper.GetFloat64("duration")
 
 	// Check NO_COLOR support (Dual-Mode UX)
 	useColor := os.Getenv("NO_COLOR") == ""
@@ -365,13 +369,18 @@ func executeSynthesis(args []string) {
 	// Wait briefly for disk flushing inside the container
 	time.Sleep(100 * time.Millisecond)
 
-	// HIGH-PERFORMANCE ZERO-COPY OPTIMIZATION:
-	// Because the container writes directly to the shared bind mount, the output PCM file is instantly 
-	// visible on our host Mac! We bypass all "container cp" process overhead, converting the PCM directly!
+	// Convert raw PCM to WAV using ffmpeg on host
 	if !isJSON {
 		fmt.Printf("Converting PCM to WAV at %s...\n", outWav)
 	}
-	ffmpegCmd := exec.Command("ffmpeg", "-y", "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", sharedPCMPath, outWav)
+	
+	ffmpegArgs := []string{"-y", "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", sharedPCMPath}
+	if targetDuration > 0.0 {
+		ffmpegArgs = append(ffmpegArgs, "-t", fmt.Sprintf("%.2f", targetDuration))
+	}
+	ffmpegArgs = append(ffmpegArgs, outWav)
+	
+	ffmpegCmd := exec.Command("ffmpeg", ffmpegArgs...)
 	var ffmpegErr bytes.Buffer
 	ffmpegCmd.Stderr = &ffmpegErr
 	if err := ffmpegCmd.Run(); err != nil {

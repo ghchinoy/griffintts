@@ -88,3 +88,29 @@ Rather than editing strings manually, we can easily build a **Speech Designer Pl
 1.  **Expressive Presets Sidebar**: Add a sidebar containing Jibo's emotional states (Excited, Sorrow, Worried, Affectionate). Highlighting text and clicking "Excited" automatically wraps the string in `<excited>...</excited>`.
 2.  **Parametric Sliders**: Provide native macOS sliders for `Pitch`, `Speed`, and `Intonation Range (Bandwidth)`. These bind directly to the Go CLI's `--pitch` and `--speed` command-line flags.
 3.  **Jibonics Soundboard**: Add an "Insert Effect" dropdown menu. Selecting `"woo_hoo_hoo"` inserts Jibo's custom `<item name="woo_hoo_hoo" />` tag at the cursor's current insertion point, letting designers composite speech and sound effects effortlessly!
+
+---
+
+## Academic Foundations & References
+
+Jibo's local speech synthesis architecture is a masterpiece of commercial integration built upon several world-class academic foundations. To learn more about the deep DSP and linguistic mechanics of these subsystems, consult the following references:
+
+### 1. Nagoya HTS (HMM-based Speech Synthesis System) Engine
+*   **Role**: Griffin's acoustic engine is based on standard HTS decision-tree state models, mapping 113-dimension contextual features to predict duration, F0, and cepstral parameters.
+*   **Documentation & Source**: [HTS Engine API Project Page](http://hts-engine.sourceforge.net/)
+*   **Key Academic Paper**: Tokuda, K., et al. (2013). *Speech Synthesis Based on Hidden Markov Models.* Proceedings of the IEEE, Vol. 101, No. 5.
+
+### 2. The WORLD Vocoder
+*   **Role**: WORLD is a state-of-the-art speech analysis and synthesis system used to reconstruct Jibo's newer `en_us_world.voice` model. It shapes Jibo's acoustic waveform using fundamental frequency (F0), spectral envelopes (MCP), and multi-band aperiodicity (BAP) to completely eliminate buzzy synthetic artifacts.
+*   **Documentation & Source**: [WORLD Vocoder GitHub Repository](https://github.com/mmorise/World)
+*   **Key Academic Paper**: Morise, M., et al. (2016). *WORLD: A Vocoder-Based High-Quality Speech Synthesis System for Real-Time Applications.* IEICE Transactions on Information and Systems.
+
+### 3. OpenFST (Finite State Transducers)
+*   **Role**: Used by Jibo's text normalization frontend (`libfst.so.3` and `.fst`/`.grm` rule files under `/textnorm/`) to translate numbers, dates, abbreviations, and currencies into fully expanded linguistic strings.
+*   **Documentation & Source**: [OpenFST Library Project Page](http://www.openfst.org/)
+*   **Key Academic Paper**: Allauzen, C., et al. (2007). *OpenFst: A General and Efficient Weighted Finite-State Transducer Library.* Implementation and Application of Automata.
+
+### 4. Edinburgh Combilex Lexicon & G2P
+*   **Role**: Jibo's dictionary (`en_us.dictionary_full`) and dynamic letter-to-sound (G2P) mappings are derived from Combilex, a high-quality, multi-accented pronunciation lexicon developed by the Centre for Speech Technology Research (CSTR) at the University of Edinburgh.
+*   **Documentation & Reference**: [CSTR Combilex Project Page](https://www.cstr.ed.ac.uk/research/projects/combilex/)
+*   **Key Academic Paper**: Richmond, K., et al. (2009). *Robust Pronunciation Lexicon Database (Combilex).* In Interspeech.

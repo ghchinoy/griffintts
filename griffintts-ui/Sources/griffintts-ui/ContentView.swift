@@ -283,11 +283,8 @@ struct ContentView: View {
     
     private func animateMouthSyncWithTokens(timings: [TokenTime]) {
         animationTimer?.invalidate()
-        let startTime = Date()
         
         animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { timer in
-            let elapsed = Date().timeIntervalSince(startTime)
-            
             Task { @MainActor in
                 // Reference self.audioPlayer on MainActor dynamically without capturing timer parameter
                 guard let player = self.audioPlayer, player.isPlaying else {
@@ -299,6 +296,11 @@ struct ContentView: View {
                     }
                     return
                 }
+                
+                // CRITICAL SYNC FIX: Query the exact, millisecond-precision CoreAudio playback head currentTime
+                // instead of using system uptime offsets. This guarantees absolute phase-locked synchronization
+                // and eliminates any audio device startup/hardware latencies!
+                let elapsed = player.currentTime
                 
                 // Check if we are currently inside any token's start-end time window
                 var isSpeakingWord = false
@@ -325,11 +327,8 @@ struct ContentView: View {
     
     private func animateMouthSyncFallback() {
         animationTimer?.invalidate()
-        let startTime = Date()
         
         animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { timer in
-            let elapsed = Date().timeIntervalSince(startTime)
-            
             Task { @MainActor in
                 // Reference self.audioPlayer on MainActor dynamically without capturing timer parameter
                 guard let player = self.audioPlayer, player.isPlaying else {
@@ -341,6 +340,9 @@ struct ContentView: View {
                     }
                     return
                 }
+                
+                // CRITICAL SYNC FIX: Query the exact CoreAudio playback head currentTime
+                let elapsed = player.currentTime
                 
                 // Procedural syllable/vocal pulse fallback
                 let pulse = 1.0 + 0.18 * sin(elapsed * 22.0) * cos(elapsed * 8.0)

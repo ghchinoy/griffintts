@@ -199,6 +199,7 @@ struct ContentView: View {
                     let task = Process()
                     task.executableURL = URL(fileURLWithPath: ttsBin)
                     task.arguments = argsToPass
+                    task.currentDirectoryURL = URL(fileURLWithPath: "/Users/ghchinoy/projects/jibo")
                     
                     let stderrPipe = Pipe()
                     task.standardError = stderrPipe

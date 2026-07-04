@@ -306,15 +306,21 @@ struct ContentView: View {
                 // CRITICAL SYNC FIX: Query the exact, millisecond-precision CoreAudio playback head currentTime
                 // instead of using system uptime offsets. This guarantees absolute phase-locked synchronization
                 // and eliminates any audio device startup/hardware latencies!
-                let elapsed = player.currentTime
+                //
+                // Note: Jibo's synthesized WAV contains a starting pause (LPAU) at the beginning which accounts
+                // for ~350ms of initial silence, whereas the token timings are relative to the first spoken word.
+                // We offset the elapsed time by 350ms to perfectly align the eye-pulse with Jibo's speech!
+                let elapsed = player.currentTime - 0.35
                 
                 // Check if we are currently inside any token's start-end time window
                 var isSpeakingWord = false
-                for token in timings {
-                    // Buffer by 50ms for natural response
-                    if elapsed >= token.start && elapsed <= (token.end + 0.05) {
-                        isSpeakingWord = true
-                        break
+                if elapsed >= 0 {
+                    for token in timings {
+                        // Buffer by 50ms for natural response
+                        if elapsed >= token.start && elapsed <= (token.end + 0.05) {
+                            isSpeakingWord = true
+                            break
+                        }
                     }
                 }
                 
@@ -348,14 +354,20 @@ struct ContentView: View {
                 }
                 
                 // CRITICAL SYNC FIX: Query the exact CoreAudio playback head currentTime
-                let elapsed = player.currentTime
+                let elapsed = player.currentTime - 0.35
                 
                 // Procedural syllable/vocal pulse fallback
-                let pulse = 1.0 + 0.18 * sin(elapsed * 22.0) * cos(elapsed * 8.0)
-                withAnimation(.spring(response: 0.12, dampingFraction: 0.55)) {
-                    if pulse > 0.95 {
-                        self.talkScale = CGFloat(pulse)
-                    } else {
+                if elapsed >= 0 {
+                    let pulse = 1.0 + 0.18 * sin(elapsed * 22.0) * cos(elapsed * 8.0)
+                    withAnimation(.spring(response: 0.12, dampingFraction: 0.55)) {
+                        if pulse > 0.95 {
+                            self.talkScale = CGFloat(pulse)
+                        } else {
+                            self.talkScale = 1.0
+                        }
+                    }
+                } else {
+                    withAnimation(.spring()) {
                         self.talkScale = 1.0
                     }
                 }

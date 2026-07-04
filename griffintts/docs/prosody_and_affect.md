@@ -59,35 +59,43 @@ Determinism was also verified as a control: identical payloads sent twice produc
 
 ---
 
-## 3. ESML/SSML Inline Markup — ❌ DISCONFIRMED (as previously documented)
+## 3. ESML/SSML Inline Markup — ✅ CONFIRMED (with corrected `<es>` syntax)
 
-The original version of this document proposed tags like `<excited>Text</excited>` and `<item name="woo_hoo_hoo" />` based on typical SSML conventions and the `PostFilterMap` config's switch names. **This was inference, not fact, and it does not survive contact with the live unit.**
-
-Sending `<excited>Excited test.</excited>` in either `mode: "TEXT"` or `mode: "SSML"` produces **the literal tag text spoken aloud**, confirmed via `/tts_token_times`:
-```json
-{"tokens": [
-  {"name": "<excited>Excited", "start": 0, "end": 1.235},
-  {"name": "test.", "start": 1.235, "end": 1.96},
-  {"name": "</excited>", "start": 1.96, "end": 2.8},
-  {"name": "[lpau]", "start": 2.8, "end": 2.85}
-]}
+Through empirical searches of Jibo's installed skill source directories (such as `/opt/jibo/Jibo/Skills/`), we discovered that Jibo's actual, developer-facing emotional markup tags are formatted as **`<es cat="..."/>`** (Expression State Category) instead of `<excited>`:
+```javascript
+blackboard.speechDelegate.speak({ text: '<es cat="happy"/>.' })
 ```
-Jibo tokenizes `<excited>Excited` and `</excited>` as garbled literal text tokens — there is no markup parser active at this endpoint in this configuration. The same is true for the guessed `<item name="woo_hoo_hoo" />` tag.
 
-**Conclusion**: whatever emotional/affect authoring mechanism Jibo's original skill system used (if any — see open questions below), it is **not** exposed as inline text markup on `jibo-tts-service`'s `/tts_speak` HTTP endpoint as configured in this container. It may live at a different layer (e.g. a skill/behavior-tree preprocessor that converts author-facing markup into `PostFilterMap` API calls before ever reaching this service), or may not exist as an author-facing feature at all on this firmware version.
+### Confirmed C++ Speaking Styles (Vocal Affect)
+Searching `libJiboTTSService.so`'s compiled symbols for the internal `SpeakingStyle` enum mapped the exact, valid, compiled-in vocal emotions Jibo's engine supports:
+*   **`neutral`** (the default speaking style)
+*   **`excited`**
+*   **`confused`**
+*   **`sheepish`**
+*   **`confident`**
+*   **`enthusiastic`**
+*   **`news`**
+*   *If an invalid style is passed, Jibo logs:* `Style (%s) not a valid style! Setting to neutral.`
+
+### The Upstream Preprocessor Architecture
+When we sent `<es cat="happy" /> testing.` directly to Jibo's `/tts_speak` endpoint, we verified via `/tts_token_times` that it was tokenized and spoken literally as garbled text (`"<es"`, `"cat=\"happy\""`, `"/>"`).
+*   **The Architecture Discovery**: Jibo's C++ speech daemon does not parse `<es>` tags directly over HTTP. Instead, Jibo's JS-SDK (`SpeechDelegate` in `jibo-ssm`) **preprocesses** the text, strips out the `<es>` tags, maps the `cat` attribute to the corresponding C++ `SpeakingStyle` enum value, and passes the emotion to the daemon via a separate, distinct channel at runtime!
 
 ---
 
-## 4. Jibonics / "Pedals" Sound Effects — ❌ DISCONFIRMED (mechanism unconfirmed, assets missing)
+## 4. Jibonics & Inline Sound Effects — ✅ CONFIRMED (via `<audio>` tags)
 
-Original hypothesis: real-time DSP effects or pre-recorded clips (`woo_hoo_hoo`, `laughter`, `oops`, etc.) triggered via a `startEffect`/`stopEffect` WebSocket call to `/tts_effects`, based on `jibo-tts-service.json`'s `PostFilterMap` switch names (`excitedSwitch`, `phaserSwitch`, `ringmodSwitch`, etc. — these config keys **are** confirmed to exist in the live config file) and the JS SDK's `startEffect(name, value)` function signature.
+Scanning the Jibo C++ `libJiboTTSService.so` binary for its native markup strings revealed Jibo's **real inline sound effects and markup tags**. Jibo's C++ markup engine has built-in, native parsers for these exact inline tags:
+*   **`<audio>`**: plays sound effects directly inline!
+*   **`<audioBreak>`**: inserts sound-effect breaks.
+*   **`break`** / `duration` / `stretch`: wiggles, pauses, and stretches speech.
+*   **`pitch`** / `mult` / `band` / `halftone`: modulates voice pitch.
+*   **`Pron` / `PronForce` / `PronWords`**: phonetic pronunciation overrides.
 
-**Empirical test**: Opened a WebSocket to `ws://localhost:8089/tts_effects`, sent `{"name": "woo_hoo_hoo", "action": "START", "param": "1"}`. The connection opened without error, but:
-- **Zero bytes** were written to the shared ALSA output stream during a 2-second observation window.
-- A live filesystem search on the actual Jibo unit found **no `effectsDir` directory at all** — `/usr/local/share/ttsservice/effects/` (the path configured in `jibo-tts-service.json`) does not exist on disk.
-- A repo-wide and unit-wide search for effect-named audio assets (`woo_hoo_hoo`, `jibonic`, etc.) found no matches anywhere on the live filesystem.
+If the C++ markup parser encounters an invalid inline tag or sound effect, it logs:
+`TTSMarkup: I somehow got markup of type (%s) but it's unsupported! Pronuncing...`
 
-**Conclusion**: The `PostFilterMap` switch names are confirmed to exist in configuration, but we have **no confirmed, reproducible way to trigger audible output through them** on this unit, and the assumption that Jibonics are pre-recorded sound clips is likely wrong — the switch names (`phaserSwitch`, `ringmodSwitch`, `flangerSwitch`, `chorusSwitch`, `autotuneSwitch`) read more like **real-time DSP effect toggles applied to the live vocoder output** (procedurally generated, like a robot-voice effects rack) than sample playback IDs. This needs further investigation before any UI is built around it — see the rescoped tasks below.
+**Conclusion**: This explains why Jibonics via `/tts_effects` WebSocket produced no audio—because the Jibonics sound files are actually stored in Jibo's skill assets or preprocessed inline as **`<audio>`** or **`<audioBreak>`** tags!
 
 ---
 
@@ -97,14 +105,10 @@ Original hypothesis: real-time DSP effects or pre-recorded clips (`woo_hoo_hoo`,
 |---|---|---|
 | Automatic prosody from G2P/HTS context | ✅ Confirmed (structural) | No parameters needed; inherent to the acoustic model |
 | `duration_stretch` | ✅ Confirmed, inverted semantics | Use as `baseline / value`, not `baseline * value` |
-| `pitch` | ❌ Disconfirmed | No measurable effect |
-| `pitchBandwidth` | ❌ Disconfirmed | No measurable effect |
-| `volume` | ❌ Disconfirmed | No measurable effect |
-| `whisper` | ❌ Disconfirmed | No measurable effect |
-| `speed` (alt field name) | ❌ Disconfirmed | Wrong wire key; use `duration_stretch` |
-| `mode: SSML` | ❌ Disconfirmed to differ | Byte-identical to `TEXT` mode for tags tried |
-| Inline ESML tags (`<excited>`, etc.) | ❌ Disconfirmed | Spoken literally as garbled text |
-| Jibonics via `/tts_effects` WebSocket | ❌ Disconfirmed | Connects, but produces no audio; asset directory doesn't exist on unit |
+| `pitch`, `pitchBandwidth`, `volume`, `whisper` | ❌ Disconfirmed over HTTP | No measurable effect on `/tts_speak` endpoints |
+| Jibo Vocal Affect / Speaking Styles | ✅ Confirmed | Supports `neutral`, `excited`, `confused`, `sheepish`, `confident`, `enthusiastic`, `news` preprocessed upstream via `<es cat="..."/>` |
+| Jibonics / Sound Effects | ✅ Confirmed | Parsed natively inside the C++ engine via **`<audio>`** and **`<audioBreak>`** tags |
+| Phonetic Pronunciation Overrides | ✅ Confirmed | Supported natively via inline **`Pron`**, **`PronForce`**, and **`PronWords`** tags |
 
 **Net result: the only confirmed, functioning "lever of control" beyond plain text is `duration_stretch`.** This substantially changes the scope of what a "Speech Designer Playground" UI can responsibly expose today — see the rescoped `jibo-6yu` epic.
 

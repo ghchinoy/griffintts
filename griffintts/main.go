@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -192,10 +193,21 @@ func executeSynthesis(args []string) {
 			return
 		}
 
-		// Simple word-phonemization mapper (Jibo dictionary wrapper helper coming soon)
-		// For now we map to the exact Jibo phone sequence
-		// "Hello" phones sequence: lpau, h, e, l, ou, lpau
-		phones := []string{"lpau", "h", "e", "l", "ou", "lpau"}
+		// Load Jibo Pronunciation Dictionary
+		if !isJSON {
+			fmt.Println("Loading Jibo pronunciation lexicon...")
+		}
+		dictMap, err := parseDictionary(filepath.Join(assetsDir, "en_us.dictionary"))
+		if err != nil {
+			printErrorAndHint(fmt.Sprintf("Error: Failed to load Jibo dictionary: %v", err), "")
+			os.Exit(1)
+		}
+
+		// Phonetize the input prompt dynamically!
+		if !isJSON {
+			fmt.Println("Translating text to phonemes...")
+		}
+		phones := phonetizeText(prompt, dictMap)
 
 		// Generate HTS Labels
 		phoneFeats, err := parsePhones(filepath.Join(assetsDir, "en_us.phones"))
@@ -471,7 +483,76 @@ func printErrorAndHint(errMsg string, hintMsg string) {
 	}
 }
 
-// Phone parsing and full-context HTS label generation helper routines
+// Phone parsing, dictionary, and full-context HTS label generation helper routines
+
+func parseDictionary(dictPath string) (map[string][]string, error) {
+	wordMap := make(map[string][]string)
+	file, err := os.Open(dictPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) >= 3 {
+			word := strings.ToLower(strings.TrimSpace(parts[0]))
+			// Parse syllables and gather raw phones
+			var phonemes []string
+			for i := 2; i < len(parts); i++ {
+				syl := strings.TrimSpace(parts[i])
+				sylParts := strings.Fields(syl)
+				if len(sylParts) > 0 {
+					// Index 0 of sylParts is the stress number, the rest are phonemes
+					for j := 1; j < len(sylParts); j++ {
+						phonemes = append(phonemes, strings.ToLower(sylParts[j]))
+					}
+				}
+			}
+			if len(phonemes) > 0 {
+				wordMap[word] = phonemes
+			}
+		}
+	}
+	return wordMap, scanner.Err()
+}
+
+func phonetizeText(text string, dictMap map[string][]string) []string {
+	// Clean text: strip punctuation and split by whitespace into words
+	reg, _ := regexp.Compile("[^a-zA-Z0-9'\\s]+")
+	cleaned := reg.ReplaceAllString(text, "")
+	rawWords := strings.Fields(strings.ToLower(cleaned))
+
+	// Initial starting pause
+	phones := []string{"lpau"}
+
+	for _, w := range rawWords {
+		if w == "" {
+			continue
+		}
+		if phList, ok := dictMap[w]; ok {
+			phones = append(phones, phList...)
+		} else {
+			// Fail-safe: if a word is not in the dictionary, spell it out letter by letter!
+			// Jibo's dictionary has explicit phonetic entries for aletter, bletter, etc.
+			for _, ch := range w {
+				letterName := fmt.Sprintf("%cletter", ch)
+				if letterPhList, found := dictMap[letterName]; found {
+					phones = append(phones, letterPhList...)
+				}
+			}
+		}
+	}
+
+	// Trailing ending pause
+	phones = append(phones, "lpau")
+	return phones
+}
 
 func parsePhones(phonesPath string) (map[string][]string, error) {
 	phoneFeatures := make(map[string][]string)

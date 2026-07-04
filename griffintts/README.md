@@ -30,16 +30,20 @@ This compiles the native Go CLI wrapper and places the executable directly at **
 
 The `griffintts` CLI is designed to be highly flexible, supporting direct arguments, options, and shell pipes. It operates in **two distinct execution modes**:
 
-### 1. Standalone Native macOS Mode (Recommended Zero-Dependency)
-By loading Jibo's classic `en_us` 3-stream voice model (using standard `MCP,LF0,LPF` streams), `griffintts` can synthesize Jibo's voice **natively on macOS without any containers, virtual machines, or QEMU emulators**!
+### 1. Standalone Native macOS Mode (Experimental / Legacy Robotic Fallback)
+Synthesizes Jibo's older `en_us` 3-stream voice model **natively on macOS without any containers or virtual machines**. 
 
-To run natively, simply append the `--native` (or `-n`) flag:
+*Note: Because Jibo's classic voice contains a custom 31-coefficient LPF (Low-Pass Filter) stream, running it on standard open-source HTS engines causes severe phase-misalignment, resulting in a wiggling "fluttering" sound. This mode remains a standalone, highly-robotic experimental fallback.*
+
+To run natively, append the `--native` (or `-n`) flag:
 ```bash
-bin/griffintts --native --ow native_output.wav "Hello! Synthesized 100% natively on macOS."
+bin/griffintts --native --ow native_output.wav "Hello! Synthesized natively on macOS."
 ```
 
-### 2. Emulated Container Mode (WORLD Vocoder)
-Runs Jibo's original 32-bit ARM Linux binary under emulation inside a local container machine. On its **first run**, this mode will automatically configure, build, and start the underlying background container `tts_run` from the local `Containerfile` to expose Jibo's HTTP endpoints.
+### 2. Emulated Container Mode (Primary High-Fidelity Character Voice)
+Runs Jibo's original 32-bit ARM Linux binary under emulation inside a local container machine. This is **Jibo's primary high-fidelity character voice**, as it runs Jibo's proprietary C++ vocoder to perfectly decode the custom LPF and 4-stream WORLD vocoder structures.
+
+On its **first run**, this mode will automatically configure, build, and start the underlying background container `tts_run` to expose Jibo's HTTP endpoints.
 
 Run the emulated mode by omitting the native flag:
 ```bash

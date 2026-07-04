@@ -43,7 +43,18 @@ We successfully cloned and natively compiled Nagoya's standard `hts_engine_API` 
   **`/usr/local/share/ttsservice/voices/en_us/en_us.voice`**
   Unlike the newer `en_us_world.voice` model, the classic `en_us.voice` uses **exactly 3 streams** (`MCP`, `LF0`, `LPF`) using standard HTS MLSA filtering with low-pass filters.
   
-  By writing a custom, dynamic full-context label generator directly inside our Go CLI utility, we achieved **100% native macOS standalone speech synthesis (`griffintts --native`)** of Jibo's authentic voice with **zero container, emulation, or virtualization dependencies**! It generates standard HTS-compliant, pipe-separated context labels dynamically in-memory, writes a temporary `.lab` file, and compiles it via the native `hts_engine` binary in less than 50 milliseconds!
+  By writing a custom, dynamic full-context label generator directly inside our Go CLI utility, we achieved **100% native macOS standalone speech synthesis (`griffintts --native`)** of Jibo's authentic voice with **zero container, emulation, or virtualization dependencies**! It generates standard HTS-compliant, pipe-separated context labels dynamically in-memory, writes a temporary `.lab` file, and compiles it via the native `hts_engine` binary.
+- **The Flutter Sound Phenomenon (Vocoder Mismatch)**:
+  Although native synthesis of Jibo's classic `en_us.voice` (3-stream) model succeeds without errors on standard `hts_engine_API`, the resulting audio sounds highly distorted, fluttering, and whispery.
+  
+  **The DSP Explanation**:
+  Jibo's `en_us.voice` model uses a custom **31-dimension LPF (Low-Pass Filter) stream** (`VECTOR_LENGTH[LPF]:31`). Jibo's original C++ synthesis engine (`libJiboTTSService.so`) links a customized/modified HTS Engine (`Jibo_HTS_Engine...`) whose vocoder is tailored to process this custom 31-coefficient mixed-excitation layout. 
+  
+  When this 31-dimension LPF stream is loaded into the standard, un-modified Nagoya `hts_engine_API` vocoder (which expects small, traditional 5-coefficient or 9-coefficient low-pass filters), the MLSA filter suffers severe mathematical overflow and phase misalignment. This manifests as wiggling static distortion and "fluttering" sound artifacts.
+  
+  **Conclusion**: 
+  - **Emulated Container Mode** is Jibo's **only** high-fidelity Character Voice, as it executes Jibo's original, proprietary `libJiboTTSService.so` vocoder which perfectly decodes Jibo's custom LPF and WORLD vocoder streams.
+  - **Standalone Native macOS Mode** remains an **experimental, highly robotic, legacy fallback** option because of standard HTS vocoder stream mismatches.
 - **Path B WORLD Support**: Rather than embarking on a massive academic-level DSP porting effort to merge the WORLD vocoder library into the native C `hts_engine_API` build to support the newer 4-stream voice, we successfully prioritized the emulation-based Path B as our primary WORLD-vocoder backend.
 
 ### Challenge B: Emulation & Audio Interception (Path B)

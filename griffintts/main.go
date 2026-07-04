@@ -325,10 +325,14 @@ func executeSynthesis(args []string) {
 		return
 	}
 
-	// HIGH-PERFORMANCE ZERO-COPY OPTIMIZATION:
-	// Truncate output.raw directly on macOS host via 0ms filesystem call instead of executing heavy container-exec subprocess!
+	// HIGH-PERFORMANCE ZERO-COPY & OFFSET ALIGNMENT OPTIMIZATION:
+	// We record the current exact file size before Jibo speaks. This guarantees that we read 
+	// exclusively the newly synthesized PCM blocks, bypassing all background null/silence frames!
 	_ = os.MkdirAll(sharedVolumeDir, 0755)
-	_ = os.WriteFile(sharedPCMPath, []byte{}, 0644)
+	var startOffset int64 = 0
+	if fi, err := os.Stat(sharedPCMPath); err == nil {
+		startOffset = fi.Size()
+	}
 
 	// Trigger synthesis POST request
 	if !isJSON {
@@ -369,12 +373,41 @@ func executeSynthesis(args []string) {
 	// Wait briefly for disk flushing inside the container
 	time.Sleep(100 * time.Millisecond)
 
+	// Extract exclusively the newly written PCM data starting from startOffset (avoiding sparse null silence holes!)
+	tempRaw, err := os.CreateTemp("", "griffintts-*.raw")
+	if err != nil {
+		printErrorAndHint(fmt.Sprintf("Error: Failed to create temporary file: %v", err), "")
+		os.Exit(1)
+	}
+	tempRawPath := tempRaw.Name()
+	defer os.Remove(tempRawPath)
+
+	sharedFile, err := os.Open(sharedPCMPath)
+	if err != nil {
+		printErrorAndHint(fmt.Sprintf("Error: Failed to open shared PCM file: %v", err), "")
+		os.Exit(1)
+	}
+	_, _ = sharedFile.Seek(startOffset, io.SeekStart)
+	newBytes, err := io.ReadAll(sharedFile)
+	sharedFile.Close()
+
+	if err != nil {
+		printErrorAndHint(fmt.Sprintf("Error: Failed to read speech PCM bytes: %v", err), "")
+		os.Exit(1)
+	}
+
+	err = os.WriteFile(tempRawPath, newBytes, 0644)
+	if err != nil {
+		printErrorAndHint(fmt.Sprintf("Error: Failed to write temporary PCM: %v", err), "")
+		os.Exit(1)
+	}
+
 	// Convert raw PCM to WAV using ffmpeg on host
 	if !isJSON {
 		fmt.Printf("Converting PCM to WAV at %s...\n", outWav)
 	}
 	
-	ffmpegArgs := []string{"-y", "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", sharedPCMPath}
+	ffmpegArgs := []string{"-y", "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", tempRawPath}
 	if targetDuration > 0.0 {
 		ffmpegArgs = append(ffmpegArgs, "-t", fmt.Sprintf("%.2f", targetDuration))
 	}

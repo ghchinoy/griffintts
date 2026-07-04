@@ -182,7 +182,15 @@ struct ContentView: View {
         let wavPath = "/tmp/griffintts-ui.wav"
         
         Task {
-            // Run CLI subprocess in background Task
+            // 1. START TIMINGS FETCH IN PARALLEL! (Asynchronous background Task)
+            async let timingsFetch: [TokenTime] = {
+                if !native {
+                    return await fetchTokenTimings(text: t)
+                }
+                return []
+            }()
+            
+            // 2. RUN CLI SUBPROCESS IN PARALLEL!
             let ttsBin = "/Users/ghchinoy/projects/jibo/tools/bin/griffintts"
             
             let argsList = ["--ow", wavPath]
@@ -214,6 +222,9 @@ struct ContentView: View {
                 }
             }
             
+            // 3. AWAIT TIMINGS FETCH RESOLUTION (Will likely already be completed in parallel!)
+            let timings = await timingsFetch
+            
             if !success {
                 statusMessage = "Synthesis failed!"
                 statusColor = .red
@@ -221,13 +232,7 @@ struct ContentView: View {
                 return
             }
             
-            // Fetch timings (asynchronously in parallel or sequence)
-            var timings: [TokenTime] = []
-            if !native {
-                timings = await fetchTokenTimings(text: t)
-            }
-            
-            // Update UI
+            // Update UI & Play audio instantly!
             statusMessage = "Speaking..."
             statusColor = .blue
             isSynthesizing = false

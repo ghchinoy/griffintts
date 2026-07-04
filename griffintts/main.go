@@ -44,6 +44,9 @@ var (
 	nativeMode bool
 )
 
+const sharedVolumeDir = "/tmp/griffintts-shared"
+const sharedPCMPath = "/tmp/griffintts-shared/output.raw"
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil || !os.IsNotExist(err)
@@ -318,16 +321,10 @@ func executeSynthesis(args []string) {
 		return
 	}
 
-	// Truncate output.raw to 0 bytes before synthesis to prevent phrase accumulation (container-retention issue)
-	if !isJSON {
-		if useColor {
-			fmt.Print("\033[34m[INFO]\033[0m Clearing speech buffer inside container...\n")
-		} else {
-			fmt.Print("[INFO] Clearing speech buffer inside container...\n")
-		}
-	}
-	truncCmd := exec.Command("container", "exec", "tts_run", "truncate", "-s", "0", "/app/output.raw")
-	_ = truncCmd.Run() // Run silently to prevent dry-run/AX noise
+	// HIGH-PERFORMANCE ZERO-COPY OPTIMIZATION:
+	// Truncate output.raw directly on macOS host via 0ms filesystem call instead of executing heavy container-exec subprocess!
+	_ = os.MkdirAll(sharedVolumeDir, 0755)
+	_ = os.WriteFile(sharedPCMPath, []byte{}, 0644)
 
 	// Trigger synthesis POST request
 	if !isJSON {
@@ -366,35 +363,15 @@ func executeSynthesis(args []string) {
 	}
 
 	// Wait briefly for disk flushing inside the container
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
-	// Copy output.raw out of container to a temporary file
-	tempRaw, err := os.CreateTemp("", "griffintts-*.raw")
-	if err != nil {
-		printErrorAndHint(fmt.Sprintf("Error: Failed to create temporary file: %v", err), "")
-		os.Exit(1)
-	}
-	tempRawPath := tempRaw.Name()
-	tempRaw.Close()
-	defer os.Remove(tempRawPath)
-
-	if !isJSON {
-		fmt.Println("Copying synthesized PCM data from container...")
-	}
-	cpCmd := exec.Command("container", "cp", "tts_run:/app/output.raw", tempRawPath)
-	var cpErr bytes.Buffer
-	cpCmd.Stderr = &cpErr
-	if err := cpCmd.Run(); err != nil {
-		printErrorAndHint(fmt.Sprintf("Error: Failed to copy PCM file from container: %v", err),
-			fmt.Sprintf("Stderr: %s\nProactive Hint: Verify the container state by executing 'container ls'", cpErr.String()))
-		os.Exit(1)
-	}
-
-	// Convert raw PCM to WAV using ffmpeg on host
+	// HIGH-PERFORMANCE ZERO-COPY OPTIMIZATION:
+	// Because the container writes directly to the shared bind mount, the output PCM file is instantly 
+	// visible on our host Mac! We bypass all "container cp" process overhead, converting the PCM directly!
 	if !isJSON {
 		fmt.Printf("Converting PCM to WAV at %s...\n", outWav)
 	}
-	ffmpegCmd := exec.Command("ffmpeg", "-y", "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", tempRawPath, outWav)
+	ffmpegCmd := exec.Command("ffmpeg", "-y", "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", sharedPCMPath, outWav)
 	var ffmpegErr bytes.Buffer
 	ffmpegCmd.Stderr = &ffmpegErr
 	if err := ffmpegCmd.Run(); err != nil {
@@ -428,7 +405,7 @@ func ensureContainerRunning(isJSON bool, isDryRun bool, useColor bool) error {
 	output, err := inspectCmd.Output()
 	
 	if err != nil {
-		// Container doesn't exist, create and run it
+		// Container doesn't exist, create and run it with shared volume bind-mount
 		if isDryRun {
 			return nil // Validation of environment is ok for dry-run
 		}
@@ -439,7 +416,12 @@ func ensureContainerRunning(isJSON bool, isDryRun bool, useColor bool) error {
 				fmt.Println("[WARN] TTS container 'tts_run' does not exist. Creating and running it...")
 			}
 		}
-		runCmd := exec.Command("container", "run", "-d", "--name", "tts_run", "-p", "8089:8089", "-e", "LD_LIBRARY_PATH=/app/assets/lib:/usr/lib/arm-linux-gnueabihf", "griffintts")
+		
+		// Ensure shared directory exists
+		_ = os.MkdirAll(sharedVolumeDir, 0755)
+		
+		// Run with standard -v bind-mount mapping
+		runCmd := exec.Command("container", "run", "-d", "--name", "tts_run", "-p", "8089:8089", "-v", sharedVolumeDir+":/app/shared", "-e", "LD_LIBRARY_PATH=/app/assets/lib:/usr/lib/arm-linux-gnueabihf", "griffintts")
 		var runErr bytes.Buffer
 		runCmd.Stderr = &runErr
 		if err := runCmd.Run(); err != nil {

@@ -41,13 +41,13 @@ RUN cp /app/assets/jibo-tts-service.json /app/jibo-tts-service.json && \
     sed -i 's|/usr/local/share/ttsservice/voices/en_us_world/|/app/assets/en_us_world/|g' /app/jibo-tts-service.json && \
     sed -i 's|/usr/local/share/ttsservice/voices/en_us/griffin/fsts/|/app/assets/en_us_world/textnorm/|g' /app/jibo-tts-service.json
 
-# Configure ALSA file output plugin (direct TTSOut mapping)
+# Configure ALSA file output plugin (direct TTSOut mapping to shared directory)
 RUN printf 'pcm.TTSOut {\n\
     type file\n\
     slave {\n\
         pcm null\n\
     }\n\
-    file "/app/output.raw"\n\
+    file "/app/shared/output.raw"\n\
     format "raw"\n\
 }\n' > /root/.asoundrc
 

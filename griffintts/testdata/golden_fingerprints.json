@@ -1,0 +1,20 @@
+{
+  "baseline": {
+    "bytes": 1050704,
+    "duration_s": 10.944,
+    "rms": 3142.4,
+    "centroid_hz": 1301.3
+  },
+  "fast": {
+    "bytes": 747600,
+    "duration_s": 7.787,
+    "rms": 2815.7,
+    "centroid_hz": 1335.2
+  },
+  "slow": {
+    "bytes": 1441872,
+    "duration_s": 15.019,
+    "rms": 3323.2,
+    "centroid_hz": 1282.0
+  }
+}

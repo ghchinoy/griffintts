@@ -26,13 +26,13 @@ type SpeakRequest struct {
 }
 
 type JSONOutput struct {
-	Status      string `json:"status"`
-	Prompt      string `json:"prompt"`
-	OutputPath  string `json:"output_path"`
-	PromptLen   int    `json:"prompt_length"`
-	Timestamp   string `json:"timestamp"`
-	NativeMode  bool   `json:"native_mode"`
-	DryRun      bool   `json:"dry_run,omitempty"`
+	Status     string `json:"status"`
+	Prompt     string `json:"prompt"`
+	OutputPath string `json:"output_path"`
+	PromptLen  int    `json:"prompt_length"`
+	Timestamp  string `json:"timestamp"`
+	NativeMode bool   `json:"native_mode"`
+	DryRun     bool   `json:"dry_run,omitempty"`
 }
 
 var (
@@ -157,7 +157,7 @@ func executeSynthesis(args []string) {
 		wd, _ := os.Getwd()
 		assetsDir := filepath.Join(wd, "tools/griffintts/assets/en_us")
 		enginePath := filepath.Join(wd, "tools/griffintts/hts_engine_API/src/build/bin/hts_engine")
-		
+
 		// Fallback paths if working directory is inside the tools subdirectory
 		if !fileExists(assetsDir) {
 			assetsDir = filepath.Join(wd, "assets/en_us")
@@ -224,7 +224,7 @@ func executeSynthesis(args []string) {
 		}
 
 		labels := generateLabels(phones, phoneFeats)
-		
+
 		tempLab, err := os.CreateTemp("", "griffintts-*.lab")
 		if err != nil {
 			printErrorAndHint(fmt.Sprintf("Error: Failed to create temporary label: %v", err), "")
@@ -240,12 +240,12 @@ func executeSynthesis(args []string) {
 
 		// Run native hts_engine with Jibo's specific alpha/beta constants and a +16 dB gain boost
 		voicePath := filepath.Join(assetsDir, "en_us.voice")
-		synthCmd := exec.Command(enginePath, 
-			"-m", voicePath, 
-			"-a", "0.53", 
-			"-b", "0.4", 
-			"-g", "16", 
-			"-ow", outWav, 
+		synthCmd := exec.Command(enginePath,
+			"-m", voicePath,
+			"-a", "0.53",
+			"-b", "0.4",
+			"-g", "16",
+			"-ow", outWav,
 			tempLabPath,
 		)
 		var synthErr bytes.Buffer
@@ -326,7 +326,7 @@ func executeSynthesis(args []string) {
 	}
 
 	// HIGH-PERFORMANCE ZERO-COPY & OFFSET ALIGNMENT OPTIMIZATION:
-	// We record the current exact file size before Jibo speaks. This guarantees that we read 
+	// We record the current exact file size before Jibo speaks. This guarantees that we read
 	// exclusively the newly synthesized PCM blocks, bypassing all background null/silence frames!
 	_ = os.MkdirAll(sharedVolumeDir, 0755)
 	var startOffset int64 = 0
@@ -406,13 +406,13 @@ func executeSynthesis(args []string) {
 	if !isJSON {
 		fmt.Printf("Converting PCM to WAV at %s...\n", outWav)
 	}
-	
+
 	ffmpegArgs := []string{"-y", "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", tempRawPath}
 	if targetDuration > 0.0 {
 		ffmpegArgs = append(ffmpegArgs, "-t", fmt.Sprintf("%.2f", targetDuration))
 	}
 	ffmpegArgs = append(ffmpegArgs, outWav)
-	
+
 	ffmpegCmd := exec.Command("ffmpeg", ffmpegArgs...)
 	var ffmpegErr bytes.Buffer
 	ffmpegCmd.Stderr = &ffmpegErr
@@ -445,7 +445,7 @@ func ensureContainerRunning(isJSON bool, isDryRun bool, useColor bool) error {
 	// Check if tts_run exists
 	inspectCmd := exec.Command("container", "inspect", "tts_run")
 	output, err := inspectCmd.Output()
-	
+
 	if err != nil {
 		// Container doesn't exist, create and run it with shared volume bind-mount
 		if isDryRun {
@@ -458,10 +458,10 @@ func ensureContainerRunning(isJSON bool, isDryRun bool, useColor bool) error {
 				fmt.Println("[WARN] TTS container 'tts_run' does not exist. Creating and running it...")
 			}
 		}
-		
+
 		// Ensure shared directory exists
 		_ = os.MkdirAll(sharedVolumeDir, 0755)
-		
+
 		// Run with standard -v bind-mount mapping
 		runCmd := exec.Command("container", "run", "-d", "--name", "tts_run", "-p", "8089:8089", "-v", sharedVolumeDir+":/app/shared", "-e", "LD_LIBRARY_PATH=/app/assets/lib:/usr/lib/arm-linux-gnueabihf", "griffintts")
 		var runErr bytes.Buffer
@@ -527,13 +527,13 @@ func parseDictionary(dictPath string) (map[string][]string, error) {
 		if len(parts) >= 2 {
 			word := strings.ToLower(strings.TrimSpace(parts[0]))
 			var phonemes []string
-			
+
 			// Support both Jibo dictionary formats (with or without POS tagging fields)
 			startIdx := 1
 			if len(parts) >= 3 && !strings.Contains(parts[1], "1") && !strings.Contains(parts[1], "0") && !strings.Contains(parts[1], "2") {
 				startIdx = 2 // Skip POS field
 			}
-			
+
 			for i := startIdx; i < len(parts); i++ {
 				syl := strings.TrimSpace(parts[i])
 				sylParts := strings.Fields(syl)

@@ -219,9 +219,16 @@ func executeSynthesis(args []string) {
 		}
 		tempLab.Close()
 
-		// Run native hts_engine
+		// Run native hts_engine with Jibo's specific alpha/beta constants and a +16 dB gain boost
 		voicePath := filepath.Join(assetsDir, "en_us.voice")
-		synthCmd := exec.Command(enginePath, "-m", voicePath, "-ow", outWav, tempLabPath)
+		synthCmd := exec.Command(enginePath, 
+			"-m", voicePath, 
+			"-a", "0.53", 
+			"-b", "0.4", 
+			"-g", "16", 
+			"-ow", outWav, 
+			tempLabPath,
+		)
 		var synthErr bytes.Buffer
 		synthCmd.Stderr = &synthErr
 		if err := synthCmd.Run(); err != nil {

@@ -17,6 +17,15 @@ struct TokenTimesResponse: Codable {
     let tokentimes: TokenTimesWrapper
 }
 
+// Global High-Resolution Logging Helper
+func logDebug(_ message: String) {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+    let timestamp = formatter.string(from: Date())
+    print("[\(timestamp)] [GriffinUI] \(message)")
+    fflush(stdout) // Ensure logs flush immediately to stdout
+}
+
 @MainActor
 struct ContentView: View {
     @State private var prompt: String = "Hi there, I am Jibo, synthesized locally on macOS!"
@@ -33,6 +42,9 @@ struct ContentView: View {
     @State private var audioPlayer: AVAudioPlayer?
     @State private var animationTimer: Timer?
     @State private var blinkTimer: Timer?
+    
+    // Concurrency-safe State for Tracking First Active Animation Tick
+    @State private var isFirstTick: Bool = true
     
     var body: some View {
         VStack(spacing: 0) {
@@ -173,6 +185,10 @@ struct ContentView: View {
     private func triggerSynthesis() {
         guard !isSynthesizing && !prompt.isEmpty else { return }
         
+        logDebug("--- NEW SYNTHESIS RUN TRIGGERED ---")
+        logDebug("Prompt text: \"\(prompt)\"")
+        logDebug("Is Native: \(isNative)")
+        
         isSynthesizing = true
         statusMessage = "Synthesizing..."
         statusColor = .orange
@@ -183,6 +199,7 @@ struct ContentView: View {
         
         Task {
             // 1. START TIMINGS FETCH IN PARALLEL! (Asynchronous background Task)
+            logDebug("[Timing] Launching parallel fetchTokenTimings task...")
             async let timingsFetch: [TokenTime] = {
                 if !native {
                     return await fetchTokenTimings(text: t)
@@ -200,8 +217,8 @@ struct ContentView: View {
             }
             finalArgs.append(t)
             
+            logDebug("[Subprocess] Spawning Go CLI subprocess: \(ttsBin) \(finalArgs.joined(separator: " "))")
             let success = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                // Isolated, non-capturing background thread execution to prevent warnings
                 let argsToPass = finalArgs
                 DispatchQueue.global(qos: .userInitiated).async {
                     let task = Process()
@@ -221,14 +238,18 @@ struct ContentView: View {
                     }
                 }
             }
+            logDebug("[Subprocess] Go CLI subprocess completed. Success status: \(success)")
             
             // 3. AWAIT TIMINGS FETCH RESOLUTION (Will likely already be completed in parallel!)
+            logDebug("[Timing] Awaiting parallel timingsFetch resolution...")
             let timings = await timingsFetch
+            logDebug("[Timing] timingsFetch resolved. Fetched \(timings.count) tokens.")
             
             if !success {
                 statusMessage = "Synthesis failed!"
                 statusColor = .red
                 isSynthesizing = false
+                logDebug("[Error] Go CLI synthesis failed.")
                 return
             }
             
@@ -257,12 +278,14 @@ struct ContentView: View {
         request.httpBody = jsonData
         
         do {
+            logDebug("[Timing] URLSession sending POST to \(url)...")
             let (data, _) = try await URLSession.shared.data(for: request)
+            logDebug("[Timing] URLSession received timings response.")
             if let response = try? JSONDecoder().decode(TokenTimesResponse.self, from: data) {
                 return response.tokentimes.tokens
             }
         } catch {
-            print("Error fetching timings: \(error)")
+            logDebug("[Error] Error fetching timings from container: \(error)")
         }
         return []
     }
@@ -270,29 +293,46 @@ struct ContentView: View {
     private func playAudio(path: String, timings: [TokenTime]) {
         let url = URL(fileURLWithPath: path)
         do {
+            logDebug("[Audio] Loading AVAudioPlayer with: \(path)")
             audioPlayer = try AVAudioPlayer(contentsOf: url)
+            
+            let dataSize = (try? Data(contentsOf: url).count) ?? 0
+            logDebug("[Audio] AVAudioPlayer initialized successfully. File size: \(dataSize) bytes.")
+            
             audioPlayer?.prepareToPlay()
+            logDebug("[Audio] AVAudioPlayer prepared to play.")
+            
+            // Reset First-Tick state before starting animations
+            isFirstTick = true
+            
             audioPlayer?.play()
+            logDebug("[Audio] audioPlayer.play() executed successfully.")
             
             // Execute speech-sync animations
             if !timings.isEmpty {
+                logDebug("[Animation] Starting Token-Based mouth-sync animation...")
                 animateMouthSyncWithTokens(timings: timings)
             } else {
+                logDebug("[Animation] Starting Procedural Fallback mouth-sync animation...")
                 animateMouthSyncFallback()
             }
             
         } catch {
             statusMessage = "Audio play failed"
             statusColor = .red
+            logDebug("[Error] Failed to initialize/play AVAudioPlayer: \(error)")
         }
     }
     
     private func animateMouthSyncWithTokens(timings: [TokenTime]) {
         animationTimer?.invalidate()
+        let startTime = Date()
         
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { timer in
+        logDebug("[Animation] Starting 20ms timer for Token-Based mouth-sync.")
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
+            let elapsedSys = Date().timeIntervalSince(startTime)
+            
             Task { @MainActor in
-                // Reference self.audioPlayer on MainActor dynamically without capturing timer parameter
                 guard let player = self.audioPlayer, player.isPlaying else {
                     self.animationTimer?.invalidate()
                     self.statusMessage = "Jibo idle"
@@ -300,6 +340,7 @@ struct ContentView: View {
                     withAnimation(.spring()) {
                         self.talkScale = 1.0
                     }
+                    logDebug("[Animation] Animation completed. Timer invalidated.")
                     return
                 }
                 
@@ -311,6 +352,11 @@ struct ContentView: View {
                 // for ~350ms of initial silence, whereas the token timings are relative to the first spoken word.
                 // We offset the elapsed time by 350ms to perfectly align the eye-pulse with Jibo's speech!
                 let elapsed = player.currentTime - 0.35
+                
+                if self.isFirstTick {
+                    self.isFirstTick = false
+                    logDebug("[Animation] First active tick of Token-Based animation. System Elapsed: \(String(format: "%.3f", elapsedSys))s | Player currentTime (offset): \(String(format: "%.3f", elapsed))s")
+                }
                 
                 // Check if we are currently inside any token's start-end time window
                 var isSpeakingWord = false
@@ -339,10 +385,13 @@ struct ContentView: View {
     
     private func animateMouthSyncFallback() {
         animationTimer?.invalidate()
+        let startTime = Date()
         
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { timer in
+        logDebug("[Animation] Starting 20ms timer for Procedural Fallback mouth-sync.")
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
+            let elapsedSys = Date().timeIntervalSince(startTime)
+            
             Task { @MainActor in
-                // Reference self.audioPlayer on MainActor dynamically without capturing timer parameter
                 guard let player = self.audioPlayer, player.isPlaying else {
                     self.animationTimer?.invalidate()
                     self.statusMessage = "Jibo idle"
@@ -350,11 +399,17 @@ struct ContentView: View {
                     withAnimation(.spring()) {
                         self.talkScale = 1.0
                     }
+                    logDebug("[Animation] Fallback completed. Timer invalidated.")
                     return
                 }
                 
                 // CRITICAL SYNC FIX: Query the exact CoreAudio playback head currentTime
                 let elapsed = player.currentTime - 0.35
+                
+                if self.isFirstTick {
+                    self.isFirstTick = false
+                    logDebug("[Animation] First active tick of Fallback animation. System Elapsed: \(String(format: "%.3f", elapsedSys))s | Player currentTime (offset): \(String(format: "%.3f", elapsed))s")
+                }
                 
                 // Procedural syllable/vocal pulse fallback
                 if elapsed >= 0 {

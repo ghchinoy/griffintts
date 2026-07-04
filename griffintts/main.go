@@ -197,7 +197,7 @@ func executeSynthesis(args []string) {
 		if !isJSON {
 			fmt.Println("Loading Jibo pronunciation lexicon...")
 		}
-		dictMap, err := parseDictionary(filepath.Join(assetsDir, "en_us.dictionary"))
+		dictMap, err := parseDictionary(filepath.Join(assetsDir, "en_us.dictionary_full"))
 		if err != nil {
 			printErrorAndHint(fmt.Sprintf("Error: Failed to load Jibo dictionary: %v", err), "")
 			os.Exit(1)
@@ -500,16 +500,27 @@ func parseDictionary(dictPath string) (map[string][]string, error) {
 			continue
 		}
 		parts := strings.Split(line, "|")
-		if len(parts) >= 3 {
+		if len(parts) >= 2 {
 			word := strings.ToLower(strings.TrimSpace(parts[0]))
-			// Parse syllables and gather raw phones
 			var phonemes []string
-			for i := 2; i < len(parts); i++ {
+			
+			// Support both Jibo dictionary formats (with or without POS tagging fields)
+			startIdx := 1
+			if len(parts) >= 3 && !strings.Contains(parts[1], "1") && !strings.Contains(parts[1], "0") && !strings.Contains(parts[1], "2") {
+				startIdx = 2 // Skip POS field
+			}
+			
+			for i := startIdx; i < len(parts); i++ {
 				syl := strings.TrimSpace(parts[i])
 				sylParts := strings.Fields(syl)
 				if len(sylParts) > 0 {
-					// Index 0 of sylParts is the stress number, the rest are phonemes
-					for j := 1; j < len(sylParts); j++ {
+					// Index 0 of sylParts is the stress marker (e.g., "1").
+					// If the first element is not a number, it is parsed directly as a phoneme!
+					startWordIdx := 1
+					if len(sylParts[0]) > 0 && !strings.ContainsAny(string(sylParts[0][0]), "0123456789") {
+						startWordIdx = 0
+					}
+					for j := startWordIdx; j < len(sylParts); j++ {
 						phonemes = append(phonemes, strings.ToLower(sylParts[j]))
 					}
 				}

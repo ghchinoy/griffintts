@@ -34,6 +34,9 @@ struct ContentView: View {
     @State private var statusMessage: String = "Jibo ready"
     @State private var statusColor: Color = .green
     
+    // Expressive Parametric Controls (jibo-6yu.3)
+    @State private var speedFactor: Double = 1.0
+    
     // Eye state variables
     @State private var blinkScaleY: CGFloat = 1.0
     @State private var talkScale: CGFloat = 1.0
@@ -128,6 +131,26 @@ struct ContentView: View {
                     .disabled(isSynthesizing || prompt.isEmpty)
                 }
                 
+                // Speed Factor Slider (jibo-6yu.3)
+                HStack(spacing: 12) {
+                    Image(systemName: "gauge.with.needle.fill")
+                        .foregroundColor(.gray)
+                    Text("Speed:")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .frame(width: 45, alignment: .leading)
+                    Slider(value: $speedFactor, in: 0.5...2.0, step: 0.1) {
+                        Text("Speed")
+                    }
+                    .accentColor(.blue)
+                    
+                    Text(String(format: "%.1fx", speedFactor))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.gray)
+                        .frame(width: 35, alignment: .trailing)
+                }
+                .padding(.top, 4)
+                
                 // Configuration Toggles
                 HStack {
                     Toggle(isOn: $isNative) {
@@ -182,12 +205,33 @@ struct ContentView: View {
         }
     }
     
+    private func findProjectRoot() -> URL? {
+        // Start at the current executable's directory
+        guard let exeURL = Bundle.main.executableURL else { return nil }
+        var dir = exeURL.deletingLastPathComponent()
+        
+        // Walk up the filesystem hierarchy (limit to 10 levels to prevent infinite loops)
+        for _ in 0..<10 {
+            let agentsMd = dir.appendingPathComponent("AGENTS.md")
+            if FileManager.default.fileExists(atPath: agentsMd.path) {
+                return dir
+            }
+            let parent = dir.deletingLastPathComponent()
+            if parent.path == dir.path { // Reached root /
+                break
+            }
+            dir = parent
+        }
+        return nil
+    }
+    
     private func triggerSynthesis() {
         guard !isSynthesizing && !prompt.isEmpty else { return }
         
         logDebug("--- NEW SYNTHESIS RUN TRIGGERED ---")
         logDebug("Prompt text: \"\(prompt)\"")
         logDebug("Is Native: \(isNative)")
+        logDebug("Speed Factor: \(speedFactor)")
         
         isSynthesizing = true
         statusMessage = "Synthesizing..."
@@ -195,26 +239,39 @@ struct ContentView: View {
         
         let t = prompt
         let native = isNative
+        let speed = speedFactor
         let wavPath = "/tmp/griffintts-ui.wav"
         
         Task {
+            // Find Jibo project root directory dynamically
+            guard let projectRoot = findProjectRoot() else {
+                statusMessage = "Project root not found!"
+                statusColor = .red
+                isSynthesizing = false
+                logDebug("[Error] Failed to dynamically locate Jibo project root directory.")
+                return
+            }
+            logDebug("[Environment] Located project root: \(projectRoot.path)")
+            
             // 1. FETCH TIMINGS FIRST (Takes only ~100ms, completely imperceptible!)
             logDebug("[Timing] Fetching token timings from container...")
             var timings: [TokenTime] = []
             if !native {
+                // Adjust timings endpoint query context if we change timings in future
                 timings = await fetchTokenTimings(text: t)
             }
             logDebug("[Timing] Timings fetched. Received \(timings.count) tokens.")
             
             // Calculate exact speech duration (end of last token + 350ms silence + 50ms comfort padding)
+            // If speed is not 1.0, the synthesized duration is divided by the speed factor!
             var speechDuration: Double = 0.0
             if let lastToken = timings.last {
-                speechDuration = lastToken.end + 0.40
-                logDebug("[Timing] Calculated exact audio duration: \(String(format: "%.3f", speechDuration))s (Last Token: '\(lastToken.name)' ends at \(lastToken.end)s)")
+                speechDuration = (lastToken.end / speed) + 0.40
+                logDebug("[Timing] Calculated exact audio duration: \(String(format: "%.3f", speechDuration))s (Last Token: '\(lastToken.name)' ends at \(lastToken.end)s, scaled by speed \(speed))")
             }
             
-            // 2. RUN CLI SUBPROCESS WITH EXPLICIT DURATION CROPPING FLAG!
-            let ttsBin = "/Users/ghchinoy/projects/jibo/tools/bin/griffintts"
+            // 2. RUN CLI SUBPROCESS WITH EXPLICIT DURATION AND SPEED FLAGS!
+            let ttsBin = projectRoot.appendingPathComponent("tools/bin/griffintts").path
             
             var finalArgs = ["--ow", wavPath]
             if native {
@@ -223,17 +280,23 @@ struct ContentView: View {
                 finalArgs.append("--duration")
                 finalArgs.append(String(format: "%.2f", speechDuration))
             }
+            
+            // Pass the speed parameter natively to the backend (jibo-6yu.3)
+            finalArgs.append("--speed")
+            finalArgs.append(String(format: "%.2f", speed))
+            
             finalArgs.append(t)
             
             logDebug("[Subprocess] Spawning Go CLI subprocess: \(ttsBin) \(finalArgs.joined(separator: " "))")
             let success = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
                 // Isolated, non-capturing background thread execution to prevent warnings
                 let argsToPass = finalArgs
+                let currentDir = projectRoot
                 DispatchQueue.global(qos: .userInitiated).async {
                     let task = Process()
                     task.executableURL = URL(fileURLWithPath: ttsBin)
                     task.arguments = argsToPass
-                    task.currentDirectoryURL = URL(fileURLWithPath: "/Users/ghchinoy/projects/jibo")
+                    task.currentDirectoryURL = currentDir
                     
                     let stderrPipe = Pipe()
                     task.standardError = stderrPipe
@@ -312,13 +375,13 @@ struct ContentView: View {
             audioPlayer?.play()
             logDebug("[Audio] audioPlayer.play() executed successfully.")
             
-            // Execute speech-sync animations
+            // Execute speech-sync animations, passing current speed factor for timeline scaling (jibo-6yu.3)
             if !timings.isEmpty {
                 logDebug("[Animation] Starting Token-Based mouth-sync animation...")
-                animateMouthSyncWithTokens(timings: timings)
+                animateMouthSyncWithTokens(timings: timings, speed: speedFactor)
             } else {
                 logDebug("[Animation] Starting Procedural Fallback mouth-sync animation...")
-                animateMouthSyncFallback()
+                animateMouthSyncFallback(speed: speedFactor)
             }
             
         } catch {
@@ -328,11 +391,11 @@ struct ContentView: View {
         }
     }
     
-    private func animateMouthSyncWithTokens(timings: [TokenTime]) {
+    private func animateMouthSyncWithTokens(timings: [TokenTime], speed: Double) {
         animationTimer?.invalidate()
         let startTime = Date()
         
-        logDebug("[Animation] Starting 20ms timer for Token-Based mouth-sync.")
+        logDebug("[Animation] Starting 20ms timer for Token-Based mouth-sync (Speed: \(speed)x).")
         animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
             let elapsedSys = Date().timeIntervalSince(startTime)
             
@@ -355,11 +418,15 @@ struct ContentView: View {
                 // Note: Jibo's synthesized WAV contains a starting pause (LPAU) at the beginning which accounts
                 // for ~350ms of initial silence, whereas the token timings are relative to the first spoken word.
                 // We offset the elapsed time by 350ms to perfectly align the eye-pulse with Jibo's speech!
-                let elapsed = player.currentTime - 0.35
+                let elapsedAudio = player.currentTime - 0.35
+                
+                // Scale the audio-head elapsed timeline back up by the speed factor so it matches Jibo's
+                // baseline un-stretched token timestamps! (jibo-6yu.3)
+                let elapsed = elapsedAudio * speed
                 
                 if self.isFirstTick {
                     self.isFirstTick = false
-                    logDebug("[Animation] First active tick of Token-Based animation. System Elapsed: \(String(format: "%.3f", elapsedSys))s | Player currentTime (offset): \(String(format: "%.3f", elapsed))s")
+                    logDebug("[Animation] First active tick of Token-Based animation. System Elapsed: \(String(format: "%.3f", elapsedSys))s | Player currentTime (offset/scaled): \(String(format: "%.3f", elapsed))s")
                 }
                 
                 // Check if we are currently inside any token's start-end time window
@@ -387,11 +454,11 @@ struct ContentView: View {
         }
     }
     
-    private func animateMouthSyncFallback() {
+    private func animateMouthSyncFallback(speed: Double) {
         animationTimer?.invalidate()
         let startTime = Date()
         
-        logDebug("[Animation] Starting 20ms timer for Procedural Fallback mouth-sync.")
+        logDebug("[Animation] Starting 20ms timer for Procedural Fallback mouth-sync (Speed: \(speed)x).")
         animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
             let elapsedSys = Date().timeIntervalSince(startTime)
             
@@ -408,11 +475,14 @@ struct ContentView: View {
                 }
                 
                 // CRITICAL SYNC FIX: Query the exact CoreAudio playback head currentTime
-                let elapsed = player.currentTime - 0.35
+                let elapsedAudio = player.currentTime - 0.35
+                
+                // Scale the fallback timeline back up by the speed factor
+                let elapsed = elapsedAudio * speed
                 
                 if self.isFirstTick {
                     self.isFirstTick = false
-                    logDebug("[Animation] First active tick of Fallback animation. System Elapsed: \(String(format: "%.3f", elapsedSys))s | Player currentTime (offset): \(String(format: "%.3f", elapsed))s")
+                    logDebug("[Animation] First active tick of Fallback animation. System Elapsed: \(String(format: "%.3f", elapsedSys))s | Player currentTime (offset/scaled): \(String(format: "%.3f", elapsed))s")
                 }
                 
                 // Procedural syllable/vocal pulse fallback

@@ -183,7 +183,7 @@ struct ContentView: View {
         
         Task {
             // Run CLI subprocess in background Task
-            let ttsBin = "/Users/ghchinoy/projects/jibo/bin/griffintts"
+            let ttsBin = "/Users/ghchinoy/projects/jibo/tools/bin/griffintts"
             
             let argsList = ["--ow", wavPath]
             var finalArgs = argsList

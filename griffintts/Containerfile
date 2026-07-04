@@ -1,0 +1,61 @@
+FROM ubuntu:20.04
+
+# Avoid interactive prompts during apt-get
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Enable 32-bit ARM (armhf) architecture support and install tools
+RUN dpkg --add-architecture armhf && \
+    apt-get update && \
+    apt-get install -y \
+    qemu-user \
+    qemu-user-static \
+    libc6:armhf \
+    libstdc++6:armhf \
+    libasound2:armhf \
+    libasound2-plugins:armhf \
+    curl \
+    ca-certificates \
+    alsa-utils \
+    locales \
+    && locale-gen en_US.UTF-8 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set up standard locale environment variables
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+# Set up the app directory
+WORKDIR /app
+
+# Copy Jibo assets into the container
+COPY assets /app/assets
+
+# Create directory structure and symlinks for Jibo's hardcoded paths
+RUN mkdir -p /usr/local/share/ttsservice/voices/en_us/griffin && \
+    ln -s /app/assets/en_us_world /usr/local/share/ttsservice/voices/en_us_world && \
+    ln -s /app/assets/en_us_world/textnorm /usr/local/share/ttsservice/voices/en_us/griffin/fsts
+
+# Create the custom configuration file
+RUN cp /app/assets/jibo-tts-service.json /app/jibo-tts-service.json && \
+    # Modify resource paths to point to /app/assets/
+    sed -i 's|/usr/local/share/ttsservice/voices/en_us_world/|/app/assets/en_us_world/|g' /app/jibo-tts-service.json && \
+    sed -i 's|/usr/local/share/ttsservice/voices/en_us/griffin/fsts/|/app/assets/en_us_world/textnorm/|g' /app/jibo-tts-service.json
+
+# Configure ALSA file output plugin (direct TTSOut mapping)
+RUN printf 'pcm.TTSOut {\n\
+    type file\n\
+    slave {\n\
+        pcm null\n\
+    }\n\
+    file "/app/output.raw"\n\
+    format "raw"\n\
+}\n' > /root/.asoundrc
+
+# Expose the HTTP port of the service
+EXPOSE 8089
+
+# Set library search paths for the emulated 32-bit ARM dynamic linker
+ENV QEMU_LD_LIBRARY_PATH=/app/assets/lib:/usr/lib/arm-linux-gnueabihf
+
+# Start command running the 32-bit ARM tts service under emulation
+CMD ["qemu-arm", "/app/assets/bin/jibo-tts-service", "-c", "/app/jibo-tts-service.json"]

@@ -299,6 +299,17 @@ func executeSynthesis(args []string) {
 		return
 	}
 
+	// Truncate output.raw to 0 bytes before synthesis to prevent phrase accumulation (container-retention issue)
+	if !isJSON {
+		if useColor {
+			fmt.Print("\033[34m[INFO]\033[0m Clearing speech buffer inside container...\n")
+		} else {
+			fmt.Print("[INFO] Clearing speech buffer inside container...\n")
+		}
+	}
+	truncCmd := exec.Command("container", "exec", "tts_run", "truncate", "-s", "0", "/app/output.raw")
+	_ = truncCmd.Run() // Run silently to prevent dry-run/AX noise
+
 	// Trigger synthesis POST request
 	if !isJSON {
 		if useColor {

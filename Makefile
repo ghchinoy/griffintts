@@ -13,12 +13,10 @@ griffintts:
 	go build -C griffintts -o ../$(BIN)/griffintts .
 	@echo "  built $(BIN)/griffintts"
 
-## griffintts-ui: build the Jibo SwiftUI face and sync speech player
+## griffintts-ui: build the Jibo SwiftUI face and sync speech player app bundle
 griffintts-ui:
 	@mkdir -p $(BIN)
-	swift build --package-path griffintts-ui -c release
-	@cp griffintts-ui/.build/release/griffintts-ui $(BIN)/griffintts-ui
-	@echo "  built $(BIN)/griffintts-ui (Native macOS SwiftUI App)"
+	./griffintts-ui/scripts/build_app_bundle.sh
 
 ## clean: remove the tools bin directory
 clean:

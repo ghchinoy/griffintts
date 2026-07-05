@@ -32,7 +32,8 @@ struct ContentView: View {
                 onStop: coordinator.stop
             )
             .navigationTitle("Speech Designer")
-            .navigationSplitViewColumnWidth(260)
+            // min/ideal/max lets the user drag the gutter; sidebar grows with the window
+            .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 480)
             .toolbar(removing: .sidebarToggle)
 
         } detail: {
@@ -95,12 +96,10 @@ struct ContentView: View {
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial)
             }
-            .navigationSplitViewColumnWidth(300) // d4m.1
+            // Detail column has no fixed width — fills whatever remains after sidebar
             .toolbar(.hidden, for: .automatic)
         }
         .navigationSplitViewStyle(.balanced)
-        // Minimum usable size — prevents collapsing to zero without locking resize.
-        .frame(minWidth: 500, minHeight: 420)
         .preferredColorScheme(.dark)
         .onAppear { startBlinking() }
         .onDisappear { blinkTimer?.invalidate(); coordinator.stop() }

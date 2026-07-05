@@ -10,6 +10,12 @@ This repo has two pieces that ship together:
 | [`griffintts/`](griffintts/) | The Go CLI. Does the actual synthesis work: container-emulated high-fidelity mode, or a fully native macOS fallback. Start here. |
 | [`griffintts-ui/`](griffintts-ui/) | A SwiftUI macOS app: Jibo's animated eye, phase-locked to the audio `griffintts` produces. Optional, depends on `griffintts` being built first. |
 
+## Demo
+
+`griffintts-ui`'s animated eye, phase-locked to Griffin's speech:
+
+https://github.com/user-attachments/assets/ed0c232a-39fd-4bbc-9aaf-122e25dbf1da
+
 ## Build
 
 ```bash

@@ -18,22 +18,21 @@ func logDebug(_ message: String) {
     fflush(stdout)
 }
 
-// MARK: - Window dimensions
-private let compactWidth: CGFloat  = 400
-private let expandedWidth: CGFloat = 710  // 400 eye + 10 divider + 300 panel
-private let windowHeight: CGFloat  = 500
-
 // MARK: - ContentView
+// Uses NavigationSplitView for a proper macOS sidebar/detail split.
+// The sidebar is the Speech Designer panel; the detail column is Jibo's face.
+// This gives us:
+//   • Standard macOS split-view chrome and collapse button for free
+//   • No custom WindowResizer / AppKit bridge needed (no crash vector)
+//   • Starts with sidebar visible (sidebarIsShown default)
 @MainActor
 struct ContentView: View {
+    // Shared state — single source of truth passed as bindings to the panel
     @State private var prompt: String = "Hi there, I am Jibo, synthesized locally on macOS!"
     @State private var isNative: Bool = false
     @State private var isSynthesizing: Bool = false
     @State private var statusMessage: String = "Jibo ready"
     @State private var statusColor: Color = .green
-    @State private var isDrawerOpen: Bool = false
-
-    // Expressive controls
     @State private var speedFactor: Double = 1.0
 
     // Eye animation
@@ -48,17 +47,33 @@ struct ContentView: View {
     @State private var isFirstTick: Bool = true
 
     var body: some View {
-        HStack(spacing: 0) {
-            // ── Left: Jibo Face Column ─────────────────────────────────
+        NavigationSplitView {
+            // ── Sidebar: Speech Designer Panel ────────────────────────
+            SpeechDesignerPanel(
+                prompt: $prompt,
+                speedFactor: $speedFactor,
+                isNative: $isNative,
+                isSynthesizing: $isSynthesizing,
+                audioPlayer: $audioPlayer,
+                onSpeak: triggerSynthesis,
+                onStop: triggerStop
+            )
+            // Remove the sidebar toolbar / navigation title chrome
+            .navigationSplitViewColumnWidth(min: 280, ideal: 310, max: 380)
+            .toolbar(removing: .sidebarToggle)
+
+        } detail: {
+            // ── Detail: Jibo's Face ────────────────────────────────────
             VStack(spacing: 0) {
-                // Eye Bezel
+                // Eye bezel (fills the detail column)
                 ZStack(alignment: .bottom) {
                     JiboEyeView(
                         blinkScaleY: blinkScaleY,
                         talkScale: talkScale,
                         lookOffset: lookOffset
                     )
-                    .background(Color(white: 0.01))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black)
                     .onContinuousHover { phase in
                         switch phase {
                         case .active(let point):
@@ -74,8 +89,11 @@ struct ContentView: View {
                         }
                     }
 
-                    // Status + Drawer Toggle
-                    HStack {
+                    // ── Compact status bar + speak button ─────────────
+                    // The prompt lives in the sidebar. When the sidebar is
+                    // collapsed, the user can still trigger speech with the
+                    // megaphone button here (the prompt binding remains live).
+                    HStack(spacing: 10) {
                         Circle().fill(statusColor).frame(width: 8, height: 8)
                         Text(statusMessage)
                             .font(.system(.caption, design: .monospaced))
@@ -87,105 +105,44 @@ struct ContentView: View {
                                 .scaleEffect(0.6)
                                 .frame(width: 16, height: 16)
                         }
-                        // Drawer toggle button (HIG: always visible, never modal)
-                        Button {
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
-                                isDrawerOpen.toggle()
-                            }
-                        } label: {
-                            Image(systemName: isDrawerOpen ? "xmark.circle" : "slider.horizontal.3")
+                        // Speak button — always accessible even when sidebar collapsed
+                        Button(action: triggerSynthesis) {
+                            Image(systemName: "megaphone.fill")
+                                .foregroundColor(isSynthesizing || prompt.isEmpty ? .gray : .white)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSynthesizing || prompt.isEmpty)
+                        .help("Speak (⌘↩)")
+
+                        // Reset eye geometry
+                        Button(action: resetEye) {
+                            Image(systemName: "eye")
                                 .foregroundColor(.gray)
                         }
                         .buttonStyle(.plain)
-                        .help(isDrawerOpen ? "Close Speech Designer" : "Open Speech Designer")
+                        .help("Reset Face")
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.black.opacity(0.8))
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
                 }
-                .frame(height: 330)
-
-                // ── Compact Controls (always visible) ─────────────────
-                VStack(spacing: 10) {
-                    HStack(spacing: 8) {
-                        TextField("What should Jibo say?", text: $prompt)
-                            .onSubmit { triggerSynthesis() }
-                            .textFieldStyle(.plain)
-                            .padding(8)
-                            .background(Color(white: 0.15))
-                            .cornerRadius(6)
-                            .foregroundColor(.white)
-                            .font(.system(.body, design: .rounded))
-                        Button(action: triggerSynthesis) {
-                            Image(systemName: "megaphone.fill").foregroundColor(.white)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isSynthesizing || prompt.isEmpty)
-                        .keyboardShortcut(.return, modifiers: .command)
-                    }
-
-                    // Speed slider row
-                    HStack(spacing: 10) {
-                        Image(systemName: "gauge.with.needle.fill").foregroundColor(.gray)
-                        Text("Speed:").font(.caption).foregroundColor(.gray).frame(width: 45, alignment: .leading)
-                        Slider(value: $speedFactor, in: 0.5...2.0, step: 0.1).accentColor(.blue)
-                        Text(String(format: "%.1fx", speedFactor))
-                            .font(.system(.caption, design: .monospaced)).foregroundColor(.gray).frame(width: 35)
-                    }
-
-                    HStack {
-                        Toggle(isOn: $isNative) {
-                            Text("Native Mode").font(.caption).foregroundColor(.gray)
-                        }.toggleStyle(.checkbox)
-                        Spacer()
-                        Button("Reset Face", action: resetEye).buttonStyle(.borderless).font(.caption)
-                    }
-                }
-                .padding(14)
-                .background(Color(white: 0.08))
             }
-            .frame(width: compactWidth)
-
-            // ── Right: Speech Designer Drawer (slides in from right) ──
-            if isDrawerOpen {
-                Divider()
-                SpeechDesignerPanel(
-                    prompt: $prompt,
-                    speedFactor: $speedFactor,
-                    isNative: $isNative,
-                    isSynthesizing: $isSynthesizing,
-                    audioPlayer: $audioPlayer,
-                    onSpeak: triggerSynthesis,
-                    onStop: triggerStop
-                )
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
+            // Remove the default navigation toolbar in the detail column
+            .navigationBarBackButtonHidden(true)
+            .toolbar(.hidden, for: .automatic)
         }
-        // WindowResizer drives the actual NSWindow.setFrame() call.
-        // We use .background so it has zero layout impact on the SwiftUI tree.
-        // DO NOT also add a fixed .frame(width:height:) here — conflicting
-        // ownership between SwiftUI and AppKit causes the NSGenericException
-        // constraint loop crash.
-        .background(
-            WindowResizer(
-                targetWidth:  isDrawerOpen ? expandedWidth : compactWidth,
-                targetHeight: windowHeight
-            )
-            .frame(width: 0, height: 0) // zero-size so it has no layout effect
-        )
-        // Layout hints only (not fixed constraints) so SwiftUI doesn't fight AppKit
-        .frame(minWidth: compactWidth, idealWidth: isDrawerOpen ? expandedWidth : compactWidth)
+        .navigationSplitViewStyle(.balanced)
         .preferredColorScheme(.dark)
         .onAppear { startBlinking() }
-        .onDisappear { blinkTimer?.invalidate(); animationTimer?.invalidate() }
-        // ── Menu Bar command receivers (HIG: every menu action routes here) ──
+        .onDisappear {
+            blinkTimer?.invalidate()
+            animationTimer?.invalidate()
+        }
+        // ── Menu Bar command receivers ─────────────────────────────────
         .onReceive(NotificationCenter.default.publisher(for: .griffinSpeak))        { _ in triggerSynthesis() }
         .onReceive(NotificationCenter.default.publisher(for: .griffinStop))         { _ in triggerStop() }
         .onReceive(NotificationCenter.default.publisher(for: .griffinToggleNative)) { _ in isNative.toggle() }
         .onReceive(NotificationCenter.default.publisher(for: .griffinClearPrompt))  { _ in prompt = "" }
-        .onReceive(NotificationCenter.default.publisher(for: .griffinToggleDrawer)) { _ in
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) { isDrawerOpen.toggle() }
-        }
     }
 
     // MARK: - Actions
@@ -213,7 +170,6 @@ struct ContentView: View {
         statusMessage = "Jibo idle"
         statusColor = .green
         withAnimation(.spring()) { talkScale = 1.0 }
-
         Task {
             guard let url = URL(string: "http://localhost:8089/tts_stop") else { return }
             var req = URLRequest(url: url)
@@ -241,41 +197,27 @@ struct ContentView: View {
     func triggerSynthesis() {
         guard !isSynthesizing && !prompt.isEmpty else { return }
         logDebug("--- SYNTHESIS TRIGGERED: \"\(prompt)\" speed=\(speedFactor)x native=\(isNative)")
-
         isSynthesizing = true
         statusMessage = "Synthesizing..."
         statusColor = .orange
-
         let t = prompt, native = isNative, speed = speedFactor
         let wavPath = "/tmp/griffintts-ui.wav"
-
         Task {
             guard let projectRoot = findProjectRoot() else {
                 statusMessage = "Project root not found!"; statusColor = .red; isSynthesizing = false; return
             }
-
-            // 1. Fetch timings (fast, ~100ms)
             var timings: [TokenTime] = []
             if !native { timings = await fetchTokenTimings(text: t) }
             logDebug("[Timing] \(timings.count) tokens received.")
-
-            // Duration crop calculation accounting for speed
             var speechDuration: Double = 0.0
-            if let last = timings.last {
-                speechDuration = (last.end / speed) + 0.40
-            }
-
-            // 2. Build CLI arguments
+            if let last = timings.last { speechDuration = (last.end / speed) + 0.40 }
             let ttsBin = projectRoot.appendingPathComponent("tools/bin/griffintts").path
             var finalArgs = ["--ow", wavPath]
             if native { finalArgs.append("--native") }
             else if speechDuration > 0 { finalArgs.append(contentsOf: ["--duration", String(format: "%.2f", speechDuration)]) }
             finalArgs.append(contentsOf: ["--speed", String(format: "%.2f", speed)])
             finalArgs.append(t)
-
             logDebug("[Subprocess] \(ttsBin) \(finalArgs.joined(separator: " "))")
-
-            // 3. Run CLI
             let success = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                 let argsToPass = finalArgs
                 let currentDir = projectRoot
@@ -290,9 +232,7 @@ struct ContentView: View {
                 }
             }
             logDebug("[Subprocess] Completed. Success: \(success)")
-
             if !success { statusMessage = "Synthesis failed!"; statusColor = .red; isSynthesizing = false; return }
-
             statusMessage = "Speaking..."; statusColor = .blue; isSynthesizing = false
             playAudio(path: wavPath, timings: timings, speed: speed)
         }
@@ -357,9 +297,7 @@ struct ContentView: View {
                 }
                 var speaking = false
                 if elapsed >= 0 {
-                    for tok in timings where elapsed >= tok.start && elapsed <= tok.end + 0.05 {
-                        speaking = true; break
-                    }
+                    for tok in timings where elapsed >= tok.start && elapsed <= tok.end + 0.05 { speaking = true; break }
                 }
                 withAnimation(.spring(response: 0.15, dampingFraction: 0.6)) {
                     self.talkScale = speaking ? CGFloat(1.0 + 0.15 * sin(elapsed * 40.0)) : 1.0

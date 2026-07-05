@@ -51,10 +51,8 @@ struct GriffinTTSApp: App {
 
                 Divider()
 
-                Button("Toggle Speech Designer Panel") {
-                    NotificationCenter.default.post(name: .griffinToggleDrawer, object: nil)
-                }
-                .keyboardShortcut("\\", modifiers: .command)
+                // The NavigationSplitView sidebar toggle is handled natively
+                // by the system via Cmd+0 (standard macOS sidebar shortcut).
             }
         }
     }
@@ -66,5 +64,5 @@ extension Notification.Name {
     static let griffinStop         = Notification.Name("griffinStop")
     static let griffinToggleNative = Notification.Name("griffinToggleNative")
     static let griffinClearPrompt  = Notification.Name("griffinClearPrompt")
-    static let griffinToggleDrawer = Notification.Name("griffinToggleDrawer")
+    // griffinToggleDrawer removed — NavigationSplitView handles sidebar via Cmd+0
 }

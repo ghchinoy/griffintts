@@ -74,8 +74,11 @@ final class SynthesisCoordinator: ObservableObject {
         }
         logDebug("[Subprocess] Completed. Success: \(success)")
         if !success {
-            statusMessage = "Synthesis failed!"; statusColor = .error; return
+            statusMessage = "Synthesis failed!"; statusColor = .error
+            isSynthesizing = false; return
         }
+        // Synthesis complete — spinner off before audio begins
+        isSynthesizing = false
         statusMessage = "Speaking..."; statusColor = .speaking
         playAudio(path: wavPath, timings: timings, speed: speedFactor)
     }

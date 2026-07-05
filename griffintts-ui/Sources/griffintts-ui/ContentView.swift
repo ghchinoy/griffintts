@@ -42,7 +42,8 @@ struct ContentView: View {
             }
             // min/ideal/max lets the user drag the gutter; sidebar grows with the window
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 480)
-            .toolbar(removing: .sidebarToggle)
+            // System sidebar toggle button intentionally kept — it's the standard
+            // macOS control that collapses/expands the panel (Cmd+0).
 
         } detail: {
             // ── Detail: Jibo's Eye ─────────────────────────────────────

@@ -11,16 +11,13 @@ import AVFoundation
 //
 // The only confirmed working control beyond plain text is `duration_stretch`
 // (speed), already wired to the Speed slider.
-//
-// The inline helpers section has been removed entirely to avoid presenting
-// controls that produce garbled literal speech as their only effect.
 @MainActor
 struct SpeechDesignerPanel: View {
     @Binding var prompt: String
     @Binding var speedFactor: Double
     @Binding var isNative: Bool
-    @Binding var isSynthesizing: Bool
-    @Binding var audioPlayer: AVAudioPlayer?
+    let isSynthesizing: Bool           // plain Bool — owned by SynthesisCoordinator
+    let audioPlayerIsPlaying: Bool     // replaces Binding<AVAudioPlayer?>
     let onSpeak: () -> Void
     let onStop: () -> Void
 
@@ -131,7 +128,7 @@ struct SpeechDesignerPanel: View {
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                         .tint(.red)
-                        .disabled(!isSynthesizing && !(audioPlayer?.isPlaying ?? false))
+                        .disabled(!isSynthesizing && !audioPlayerIsPlaying)
                         .keyboardShortcut(".", modifiers: .command)
                     }
                     .padding(.horizontal, 14)

@@ -3,13 +3,43 @@ import AppKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Elevate the app's activation policy to a regular foreground GUI app.
-        // Enables keyboard focus, Dock presence, and App Switcher integration.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    // ── Dock menu (d4m.6) ──────────────────────────────────────────────
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+
+        let speakItem = NSMenuItem(
+            title: "Speak Last Prompt",
+            action: #selector(dockSpeak),
+            keyEquivalent: ""
+        )
+        speakItem.target = self
+        menu.addItem(speakItem)
+
+        let stopItem = NSMenuItem(
+            title: "Stop",
+            action: #selector(dockStop),
+            keyEquivalent: ""
+        )
+        stopItem.target = self
+        menu.addItem(stopItem)
+
+        return menu
+    }
+
+    @objc private func dockSpeak() {
+        NotificationCenter.default.post(name: .griffinSpeak, object: nil)
+    }
+
+    @objc private func dockStop() {
+        NotificationCenter.default.post(name: .griffinStop, object: nil)
+    }
 }
 
+// swiftlint:disable:next menu_bar_check
 @main
 struct GriffinTTSApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -19,13 +49,26 @@ struct GriffinTTSApp: App {
             ContentView()
                 .navigationTitle("GriffinTTS")
         }
-        .windowStyle(HiddenTitleBarWindowStyle())
-        // ── Native macOS Menu Bar (HIG: all commands must be menu-discoverable) ──
+        // d4m.3: Use default window style (removes HiddenTitleBarWindowStyle).
+        // This restores the standard drag handle, traffic-light buttons, and
+        // full-screen zoom. The NavigationSplitView provides its own chrome.
+        //
+        // d4m.1: Constrain to content size so the window cannot collapse to zero.
+        .windowResizability(.contentSize)
+        // d4m.1: Set a sensible default launch size.
+        .defaultSize(width: 780, height: 520)
+        // ── Native macOS Menu Bar (HIG: all commands must be menu-discoverable)
         .commands {
-            // Remove the default Edit > New Window command that doesn't apply
             CommandGroup(replacing: .newItem) {}
 
-            // Jibo Speech menu
+            // d4m.2: Standard Cmd+W close shortcut
+            CommandGroup(after: .windowArrangement) {
+                Button("Close Window") {
+                    NSApp.keyWindow?.close()
+                }
+                .keyboardShortcut("w", modifiers: .command)
+            }
+
             CommandMenu("Speech") {
                 Button("Speak") {
                     NotificationCenter.default.post(name: .griffinSpeak, object: nil)
@@ -48,11 +91,6 @@ struct GriffinTTSApp: App {
                     NotificationCenter.default.post(name: .griffinClearPrompt, object: nil)
                 }
                 .keyboardShortcut("k", modifiers: .command)
-
-                Divider()
-
-                // The NavigationSplitView sidebar toggle is handled natively
-                // by the system via Cmd+0 (standard macOS sidebar shortcut).
             }
         }
     }
@@ -64,5 +102,4 @@ extension Notification.Name {
     static let griffinStop         = Notification.Name("griffinStop")
     static let griffinToggleNative = Notification.Name("griffinToggleNative")
     static let griffinClearPrompt  = Notification.Name("griffinClearPrompt")
-    // griffinToggleDrawer removed — NavigationSplitView handles sidebar via Cmd+0
 }

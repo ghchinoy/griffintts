@@ -1,31 +1,29 @@
 import SwiftUI
 import AVFoundation
 
+// MARK: - Token Timing Types
 struct TokenTime: Codable {
     let name: String
     let start: Double
     let end: Double
 }
+struct TokenTimesWrapper: Codable { let tokens: [TokenTime] }
+struct TokenTimesResponse: Codable { let tokentimes: TokenTimesWrapper }
 
-typealias TokenTimesList = [TokenTime]
-
-struct TokenTimesWrapper: Codable {
-    let tokens: TokenTimesList
-}
-
-struct TokenTimesResponse: Codable {
-    let tokentimes: TokenTimesWrapper
-}
-
-// Global High-Resolution Logging Helper
+// MARK: - Logging
 func logDebug(_ message: String) {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
-    let timestamp = formatter.string(from: Date())
-    print("[\(timestamp)] [GriffinUI] \(message)")
-    fflush(stdout) // Ensure logs flush immediately to stdout
+    print("[\(formatter.string(from: Date()))] [GriffinUI] \(message)")
+    fflush(stdout)
 }
 
+// MARK: - Window dimensions
+private let compactWidth: CGFloat  = 400
+private let expandedWidth: CGFloat = 710  // 400 eye + 10 divider + 300 panel
+private let windowHeight: CGFloat  = 500
+
+// MARK: - ContentView
 @MainActor
 struct ContentView: View {
     @State private var prompt: String = "Hi there, I am Jibo, synthesized locally on macOS!"
@@ -33,263 +31,238 @@ struct ContentView: View {
     @State private var isSynthesizing: Bool = false
     @State private var statusMessage: String = "Jibo ready"
     @State private var statusColor: Color = .green
-    
-    // Expressive Parametric Controls (jibo-6yu.3)
+    @State private var isDrawerOpen: Bool = false
+
+    // Expressive controls
     @State private var speedFactor: Double = 1.0
-    
-    // Eye state variables
+
+    // Eye animation
     @State private var blinkScaleY: CGFloat = 1.0
     @State private var talkScale: CGFloat = 1.0
     @State private var lookOffset: CGSize = .zero
-    
+
+    // Audio / timers
     @State private var audioPlayer: AVAudioPlayer?
     @State private var animationTimer: Timer?
     @State private var blinkTimer: Timer?
-    
-    // Concurrency-safe State for Tracking First Active Animation Tick
     @State private var isFirstTick: Bool = true
-    
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Jibo Face Bezel View
-            ZStack(alignment: .bottom) {
-                JiboEyeView(
-                    blinkScaleY: blinkScaleY,
-                    talkScale: talkScale,
-                    lookOffset: lookOffset
-                )
-                // Mouse-tracking hover overlay
-                .background(Color(white: 0.01))
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let point):
-                        // Calculate offset of pupil relative to center of a 400x400 face area
-                        let cx = point.x - 200
-                        let cy = point.y - 200
-                        let dist = sqrt(cx*cx + cy*cy)
-                        let maxOffset: CGFloat = 20
-                        
-                        if dist > 0 {
-                            let angle = atan2(cy, cx)
-                            let scale = min(dist * 0.1, maxOffset)
-                            lookOffset = CGSize(
-                                width: cos(angle) * scale,
-                                height: sin(angle) * scale
-                            )
-                        } else {
-                            lookOffset = .zero
-                        }
-                    case .ended:
-                        // Return to center when mouse leaves
-                        withAnimation(.spring()) {
-                            lookOffset = .zero
+        HStack(spacing: 0) {
+            // ── Left: Jibo Face Column ─────────────────────────────────
+            VStack(spacing: 0) {
+                // Eye Bezel
+                ZStack(alignment: .bottom) {
+                    JiboEyeView(
+                        blinkScaleY: blinkScaleY,
+                        talkScale: talkScale,
+                        lookOffset: lookOffset
+                    )
+                    .background(Color(white: 0.01))
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let point):
+                            let cx = point.x - 200, cy = point.y - 170
+                            let dist = sqrt(cx*cx + cy*cy)
+                            if dist > 0 {
+                                let angle = atan2(cy, cx)
+                                let scale = min(dist * 0.1, 20)
+                                lookOffset = CGSize(width: cos(angle)*scale, height: sin(angle)*scale)
+                            } else { lookOffset = .zero }
+                        case .ended:
+                            withAnimation(.spring()) { lookOffset = .zero }
                         }
                     }
-                }
-                
-                // Status Bezel Bar
-                HStack {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
-                    Text(statusMessage)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.gray)
-                    Spacer()
-                    if isSynthesizing {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .scaleEffect(0.6)
-                            .frame(width: 16, height: 16)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color.black.opacity(0.8))
-            }
-            .frame(height: 340)
-            
-            // Controller / Input Panel
-            VStack(spacing: 12) {
-                // Text input field
-                HStack(spacing: 8) {
-                    TextField("What should Jibo say?", text: $prompt, onCommit: {
-                        triggerSynthesis()
-                    })
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .padding(8)
-                    .background(Color(white: 0.15))
-                    .cornerRadius(6)
-                    .foregroundColor(.white)
-                    .font(.system(.body, design: .rounded))
-                    
-                    Button(action: triggerSynthesis) {
-                        Image(systemName: "megaphone.fill")
-                            .foregroundColor(.white)
-                    }
-                    .buttonStyle(BorderedButtonStyle())
-                    .disabled(isSynthesizing || prompt.isEmpty)
-                }
-                
-                // Speed Factor Slider (jibo-6yu.3)
-                HStack(spacing: 12) {
-                    Image(systemName: "gauge.with.needle.fill")
-                        .foregroundColor(.gray)
-                    Text("Speed:")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .frame(width: 45, alignment: .leading)
-                    Slider(value: $speedFactor, in: 0.5...2.0, step: 0.1) {
-                        Text("Speed")
-                    }
-                    .accentColor(.blue)
-                    
-                    Text(String(format: "%.1fx", speedFactor))
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.gray)
-                        .frame(width: 35, alignment: .trailing)
-                }
-                .padding(.top, 4)
-                
-                // Configuration Toggles
-                HStack {
-                    Toggle(isOn: $isNative) {
-                        Text("Standalone Native Mode (en_us)")
-                            .font(.caption)
+
+                    // Status + Drawer Toggle
+                    HStack {
+                        Circle().fill(statusColor).frame(width: 8, height: 8)
+                        Text(statusMessage)
+                            .font(.system(.caption, design: .monospaced))
                             .foregroundColor(.gray)
+                        Spacer()
+                        if isSynthesizing {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .scaleEffect(0.6)
+                                .frame(width: 16, height: 16)
+                        }
+                        // Drawer toggle button (HIG: always visible, never modal)
+                        Button {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                                isDrawerOpen.toggle()
+                            }
+                        } label: {
+                            Image(systemName: isDrawerOpen ? "xmark.circle" : "slider.horizontal.3")
+                                .foregroundColor(.gray)
+                        }
+                        .buttonStyle(.plain)
+                        .help(isDrawerOpen ? "Close Speech Designer" : "Open Speech Designer")
                     }
-                    .toggleStyle(CheckboxToggleStyle())
-                    
-                    Spacer()
-                    
-                    Button(action: resetEye) {
-                        Text("Reset Face")
-                            .font(.caption)
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.8))
                 }
+                .frame(height: 330)
+
+                // ── Compact Controls (always visible) ─────────────────
+                VStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        TextField("What should Jibo say?", text: $prompt)
+                            .onSubmit { triggerSynthesis() }
+                            .textFieldStyle(.plain)
+                            .padding(8)
+                            .background(Color(white: 0.15))
+                            .cornerRadius(6)
+                            .foregroundColor(.white)
+                            .font(.system(.body, design: .rounded))
+                        Button(action: triggerSynthesis) {
+                            Image(systemName: "megaphone.fill").foregroundColor(.white)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isSynthesizing || prompt.isEmpty)
+                        .keyboardShortcut(.return, modifiers: .command)
+                    }
+
+                    // Speed slider row
+                    HStack(spacing: 10) {
+                        Image(systemName: "gauge.with.needle.fill").foregroundColor(.gray)
+                        Text("Speed:").font(.caption).foregroundColor(.gray).frame(width: 45, alignment: .leading)
+                        Slider(value: $speedFactor, in: 0.5...2.0, step: 0.1).accentColor(.blue)
+                        Text(String(format: "%.1fx", speedFactor))
+                            .font(.system(.caption, design: .monospaced)).foregroundColor(.gray).frame(width: 35)
+                    }
+
+                    HStack {
+                        Toggle(isOn: $isNative) {
+                            Text("Native Mode").font(.caption).foregroundColor(.gray)
+                        }.toggleStyle(.checkbox)
+                        Spacer()
+                        Button("Reset Face", action: resetEye).buttonStyle(.borderless).font(.caption)
+                    }
+                }
+                .padding(14)
+                .background(Color(white: 0.08))
             }
-            .padding(16)
-            .background(Color(white: 0.08))
+            .frame(width: compactWidth)
+
+            // ── Right: Speech Designer Drawer (slides in from right) ──
+            if isDrawerOpen {
+                Divider()
+                SpeechDesignerPanel(
+                    prompt: $prompt,
+                    speedFactor: $speedFactor,
+                    isNative: $isNative,
+                    isSynthesizing: $isSynthesizing,
+                    audioPlayer: $audioPlayer,
+                    onSpeak: triggerSynthesis,
+                    onStop: triggerStop
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
-        .frame(width: 400, height: 440)
+        // WindowResizer drives the actual NSWindow frame change
+        .background(
+            WindowResizer(
+                width: isDrawerOpen ? expandedWidth : compactWidth,
+                height: windowHeight
+            ).frame(width: 0, height: 0)
+        )
+        .frame(width: isDrawerOpen ? expandedWidth : compactWidth, height: windowHeight)
         .preferredColorScheme(.dark)
-        .onAppear {
-            startBlinking()
-        }
-        .onDisappear {
-            blinkTimer?.invalidate()
-            animationTimer?.invalidate()
-        }
+        .onAppear { startBlinking() }
+        .onDisappear { blinkTimer?.invalidate(); animationTimer?.invalidate() }
     }
-    
+
+    // MARK: - Actions
+
     private func resetEye() {
-        lookOffset = .zero
-        talkScale = 1.0
-        blinkScaleY = 1.0
+        lookOffset = .zero; talkScale = 1.0; blinkScaleY = 1.0
     }
-    
+
     private func startBlinking() {
         blinkTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true) { _ in
-            // Execute eye blink (scale down, sleep, scale up) on MainActor
             Task { @MainActor in
-                withAnimation(.easeInOut(duration: 0.05)) {
-                    blinkScaleY = 0.05
-                }
+                withAnimation(.easeInOut(duration: 0.05)) { blinkScaleY = 0.05 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                    withAnimation(.easeInOut(duration: 0.05)) {
-                        blinkScaleY = 1.0
-                    }
+                    withAnimation(.easeInOut(duration: 0.05)) { blinkScaleY = 1.0 }
                 }
             }
         }
     }
-    
+
+    // /tts_stop — confirmed working (ykr.6): HTTP 200, halts PCM growth
+    func triggerStop() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+        animationTimer?.invalidate()
+        statusMessage = "Jibo idle"
+        statusColor = .green
+        withAnimation(.spring()) { talkScale = 1.0 }
+
+        Task {
+            guard let url = URL(string: "http://localhost:8089/tts_stop") else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
+            logDebug("[Stop] Firing /tts_stop...")
+            _ = try? await URLSession.shared.data(for: req)
+            logDebug("[Stop] /tts_stop sent.")
+        }
+    }
+
+    // MARK: - findProjectRoot
     private func findProjectRoot() -> URL? {
-        // Start at the current executable's directory
         guard let exeURL = Bundle.main.executableURL else { return nil }
         var dir = exeURL.deletingLastPathComponent()
-        
-        // Walk up the filesystem hierarchy (limit to 10 levels to prevent infinite loops)
         for _ in 0..<10 {
-            let agentsMd = dir.appendingPathComponent("AGENTS.md")
-            if FileManager.default.fileExists(atPath: agentsMd.path) {
-                return dir
-            }
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("AGENTS.md").path) { return dir }
             let parent = dir.deletingLastPathComponent()
-            if parent.path == dir.path { // Reached root /
-                break
-            }
+            if parent.path == dir.path { break }
             dir = parent
         }
         return nil
     }
-    
-    private func triggerSynthesis() {
+
+    // MARK: - Synthesis
+    func triggerSynthesis() {
         guard !isSynthesizing && !prompt.isEmpty else { return }
-        
-        logDebug("--- NEW SYNTHESIS RUN TRIGGERED ---")
-        logDebug("Prompt text: \"\(prompt)\"")
-        logDebug("Is Native: \(isNative)")
-        logDebug("Speed Factor: \(speedFactor)")
-        
+        logDebug("--- SYNTHESIS TRIGGERED: \"\(prompt)\" speed=\(speedFactor)x native=\(isNative)")
+
         isSynthesizing = true
         statusMessage = "Synthesizing..."
         statusColor = .orange
-        
-        let t = prompt
-        let native = isNative
-        let speed = speedFactor
+
+        let t = prompt, native = isNative, speed = speedFactor
         let wavPath = "/tmp/griffintts-ui.wav"
-        
+
         Task {
-            // Find Jibo project root directory dynamically
             guard let projectRoot = findProjectRoot() else {
-                statusMessage = "Project root not found!"
-                statusColor = .red
-                isSynthesizing = false
-                logDebug("[Error] Failed to dynamically locate Jibo project root directory.")
-                return
+                statusMessage = "Project root not found!"; statusColor = .red; isSynthesizing = false; return
             }
-            logDebug("[Environment] Located project root: \(projectRoot.path)")
-            
-            // 1. FETCH TIMINGS FIRST (Takes only ~100ms, completely imperceptible!)
-            logDebug("[Timing] Fetching token timings from container...")
+
+            // 1. Fetch timings (fast, ~100ms)
             var timings: [TokenTime] = []
-            if !native {
-                // Adjust timings endpoint query context if we change timings in future
-                timings = await fetchTokenTimings(text: t)
-            }
-            logDebug("[Timing] Timings fetched. Received \(timings.count) tokens.")
-            
-            // Calculate exact speech duration (end of last token + 350ms silence + 50ms comfort padding)
-            // If speed is not 1.0, the synthesized duration is divided by the speed factor!
+            if !native { timings = await fetchTokenTimings(text: t) }
+            logDebug("[Timing] \(timings.count) tokens received.")
+
+            // Duration crop calculation accounting for speed
             var speechDuration: Double = 0.0
-            if let lastToken = timings.last {
-                speechDuration = (lastToken.end / speed) + 0.40
-                logDebug("[Timing] Calculated exact audio duration: \(String(format: "%.3f", speechDuration))s (Last Token: '\(lastToken.name)' ends at \(lastToken.end)s, scaled by speed \(speed))")
+            if let last = timings.last {
+                speechDuration = (last.end / speed) + 0.40
             }
-            
-            // 2. RUN CLI SUBPROCESS WITH EXPLICIT DURATION AND SPEED FLAGS!
+
+            // 2. Build CLI arguments
             let ttsBin = projectRoot.appendingPathComponent("tools/bin/griffintts").path
-            
             var finalArgs = ["--ow", wavPath]
-            if native {
-                finalArgs.append("--native")
-            } else if speechDuration > 0.0 {
-                finalArgs.append("--duration")
-                finalArgs.append(String(format: "%.2f", speechDuration))
-            }
-            
-            // Pass the speed parameter natively to the backend (jibo-6yu.3)
-            finalArgs.append("--speed")
-            finalArgs.append(String(format: "%.2f", speed))
-            
+            if native { finalArgs.append("--native") }
+            else if speechDuration > 0 { finalArgs.append(contentsOf: ["--duration", String(format: "%.2f", speechDuration)]) }
+            finalArgs.append(contentsOf: ["--speed", String(format: "%.2f", speed)])
             finalArgs.append(t)
-            
-            logDebug("[Subprocess] Spawning Go CLI subprocess: \(ttsBin) \(finalArgs.joined(separator: " "))")
-            let success = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                // Isolated, non-capturing background thread execution to prevent warnings
+
+            logDebug("[Subprocess] \(ttsBin) \(finalArgs.joined(separator: " "))")
+
+            // 3. Run CLI
+            let success = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                 let argsToPass = finalArgs
                 let currentDir = projectRoot
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -297,208 +270,116 @@ struct ContentView: View {
                     task.executableURL = URL(fileURLWithPath: ttsBin)
                     task.arguments = argsToPass
                     task.currentDirectoryURL = currentDir
-                    
-                    let stderrPipe = Pipe()
-                    task.standardError = stderrPipe
-                    
-                    do {
-                        try task.run()
-                        task.waitUntilExit()
-                        continuation.resume(returning: task.terminationStatus == 0)
-                    } catch {
-                        continuation.resume(returning: false)
-                    }
+                    task.standardError = Pipe()
+                    do { try task.run(); task.waitUntilExit(); cont.resume(returning: task.terminationStatus == 0) }
+                    catch { cont.resume(returning: false) }
                 }
             }
-            logDebug("[Subprocess] Go CLI subprocess completed. Success status: \(success)")
-            
-            if !success {
-                statusMessage = "Synthesis failed!"
-                statusColor = .red
-                isSynthesizing = false
-                logDebug("[Error] Go CLI synthesis failed.")
-                return
-            }
-            
-            // Update UI & Play audio instantly!
-            statusMessage = "Speaking..."
-            statusColor = .blue
-            isSynthesizing = false
-            playAudio(path: wavPath, timings: timings)
+            logDebug("[Subprocess] Completed. Success: \(success)")
+
+            if !success { statusMessage = "Synthesis failed!"; statusColor = .red; isSynthesizing = false; return }
+
+            statusMessage = "Speaking..."; statusColor = .blue; isSynthesizing = false
+            playAudio(path: wavPath, timings: timings, speed: speed)
         }
     }
-    
+
+    // MARK: - Timings
     private func fetchTokenTimings(text: String) async -> [TokenTime] {
-        let url = URL(string: "http://localhost:8089/tts_token_times")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let payload = [
-            "prompt": text,
-            "locale": "en-US",
-            "voice": "GRIFFIN",
-            "mode": "TEXT"
-        ]
-        
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return [] }
-        request.httpBody = jsonData
-        
+        guard let url = URL(string: "http://localhost:8089/tts_token_times") else { return [] }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload: [String: String] = ["prompt": text, "locale": "en-US", "voice": "GRIFFIN", "mode": "TEXT"]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return [] }
+        req.httpBody = body
         do {
-            logDebug("[Timing] URLSession sending POST to \(url)...")
-            let (data, _) = try await URLSession.shared.data(for: request)
-            logDebug("[Timing] URLSession received timings response.")
-            if let response = try? JSONDecoder().decode(TokenTimesResponse.self, from: data) {
-                return response.tokentimes.tokens
-            }
-        } catch {
-            logDebug("[Error] Error fetching timings from container: \(error)")
-        }
+            logDebug("[Timing] Fetching token times...")
+            let (data, _) = try await URLSession.shared.data(for: req)
+            logDebug("[Timing] Response received.")
+            if let resp = try? JSONDecoder().decode(TokenTimesResponse.self, from: data) { return resp.tokentimes.tokens }
+        } catch { logDebug("[Timing] Error: \(error)") }
         return []
     }
-    
-    private func playAudio(path: String, timings: [TokenTime]) {
+
+    // MARK: - Audio + Animation
+    private func playAudio(path: String, timings: [TokenTime], speed: Double) {
         let url = URL(fileURLWithPath: path)
         do {
-            logDebug("[Audio] Loading AVAudioPlayer with: \(path)")
+            logDebug("[Audio] Loading \(path)")
             audioPlayer = try AVAudioPlayer(contentsOf: url)
-            
-            let dataSize = (try? Data(contentsOf: url).count) ?? 0
-            logDebug("[Audio] AVAudioPlayer initialized successfully. File size: \(dataSize) bytes.")
-            
+            let sz = (try? Data(contentsOf: url).count) ?? 0
+            logDebug("[Audio] \(sz) bytes. Preparing...")
             audioPlayer?.prepareToPlay()
-            logDebug("[Audio] AVAudioPlayer prepared to play.")
-            
-            // Reset First-Tick state before starting animations
             isFirstTick = true
-            
             audioPlayer?.play()
-            logDebug("[Audio] audioPlayer.play() executed successfully.")
-            
-            // Execute speech-sync animations, passing current speed factor for timeline scaling (jibo-6yu.3)
-            if !timings.isEmpty {
-                logDebug("[Animation] Starting Token-Based mouth-sync animation...")
-                animateMouthSyncWithTokens(timings: timings, speed: speedFactor)
-            } else {
-                logDebug("[Animation] Starting Procedural Fallback mouth-sync animation...")
-                animateMouthSyncFallback(speed: speedFactor)
-            }
-            
+            logDebug("[Audio] play() called.")
+            if !timings.isEmpty { animateMouthSyncWithTokens(timings: timings, speed: speed) }
+            else { animateMouthSyncFallback(speed: speed) }
         } catch {
-            statusMessage = "Audio play failed"
-            statusColor = .red
-            logDebug("[Error] Failed to initialize/play AVAudioPlayer: \(error)")
+            statusMessage = "Audio play failed"; statusColor = .red
+            logDebug("[Audio] Error: \(error)")
         }
     }
-    
+
     private func animateMouthSyncWithTokens(timings: [TokenTime], speed: Double) {
         animationTimer?.invalidate()
-        let startTime = Date()
-        
-        logDebug("[Animation] Starting 20ms timer for Token-Based mouth-sync (Speed: \(speed)x).")
+        let t0 = Date()
+        logDebug("[Animation] Token-based, speed=\(speed)x")
         animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
-            let elapsedSys = Date().timeIntervalSince(startTime)
-            
+            let sys = Date().timeIntervalSince(t0)
             Task { @MainActor in
                 guard let player = self.audioPlayer, player.isPlaying else {
                     self.animationTimer?.invalidate()
-                    self.statusMessage = "Jibo idle"
-                    self.statusColor = .green
-                    withAnimation(.spring()) {
-                        self.talkScale = 1.0
-                    }
-                    logDebug("[Animation] Animation completed. Timer invalidated.")
+                    self.statusMessage = "Jibo idle"; self.statusColor = .green
+                    withAnimation(.spring()) { self.talkScale = 1.0 }
+                    logDebug("[Animation] Complete (\(String(format: "%.2f", sys))s elapsed).")
                     return
                 }
-                
-                // CRITICAL SYNC FIX: Query the exact, millisecond-precision CoreAudio playback head currentTime
-                // instead of using system uptime offsets. This guarantees absolute phase-locked synchronization
-                // and eliminates any audio device startup/hardware latencies!
-                //
-                // Note: Jibo's synthesized WAV contains a starting pause (LPAU) at the beginning which accounts
-                // for ~350ms of initial silence, whereas the token timings are relative to the first spoken word.
-                // We offset the elapsed time by 350ms to perfectly align the eye-pulse with Jibo's speech!
-                let elapsedAudio = player.currentTime - 0.35
-                
-                // Scale the audio-head elapsed timeline back up by the speed factor so it matches Jibo's
-                // baseline un-stretched token timestamps! (jibo-6yu.3)
-                let elapsed = elapsedAudio * speed
-                
+                let elapsed = (player.currentTime - 0.35) * speed
                 if self.isFirstTick {
                     self.isFirstTick = false
-                    logDebug("[Animation] First active tick of Token-Based animation. System Elapsed: \(String(format: "%.3f", elapsedSys))s | Player currentTime (offset/scaled): \(String(format: "%.3f", elapsed))s")
+                    logDebug("[Animation] First tick. sys=\(String(format: "%.3f", sys))s elapsed(scaled)=\(String(format: "%.3f", elapsed))s")
                 }
-                
-                // Check if we are currently inside any token's start-end time window
-                var isSpeakingWord = false
+                var speaking = false
                 if elapsed >= 0 {
-                    for token in timings {
-                        // Buffer by 50ms for natural response
-                        if elapsed >= token.start && elapsed <= (token.end + 0.05) {
-                            isSpeakingWord = true
-                            break
-                        }
+                    for tok in timings where elapsed >= tok.start && elapsed <= tok.end + 0.05 {
+                        speaking = true; break
                     }
                 }
-                
                 withAnimation(.spring(response: 0.15, dampingFraction: 0.6)) {
-                    if isSpeakingWord {
-                        // Wiggle/pulse eye between 0.85 and 1.3 to simulate Jibo's animated vocal expressions
-                        let pulse = 1.0 + 0.15 * sin(elapsed * 40.0)
-                        self.talkScale = CGFloat(pulse)
-                    } else {
-                        self.talkScale = 1.0
-                    }
+                    self.talkScale = speaking ? CGFloat(1.0 + 0.15 * sin(elapsed * 40.0)) : 1.0
                 }
             }
         }
     }
-    
+
     private func animateMouthSyncFallback(speed: Double) {
         animationTimer?.invalidate()
-        let startTime = Date()
-        
-        logDebug("[Animation] Starting 20ms timer for Procedural Fallback mouth-sync (Speed: \(speed)x).")
+        let t0 = Date()
+        logDebug("[Animation] Procedural fallback, speed=\(speed)x")
         animationTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
-            let elapsedSys = Date().timeIntervalSince(startTime)
-            
+            let sys = Date().timeIntervalSince(t0)
             Task { @MainActor in
                 guard let player = self.audioPlayer, player.isPlaying else {
                     self.animationTimer?.invalidate()
-                    self.statusMessage = "Jibo idle"
-                    self.statusColor = .green
-                    withAnimation(.spring()) {
-                        self.talkScale = 1.0
-                    }
-                    logDebug("[Animation] Fallback completed. Timer invalidated.")
+                    self.statusMessage = "Jibo idle"; self.statusColor = .green
+                    withAnimation(.spring()) { self.talkScale = 1.0 }
+                    logDebug("[Animation] Fallback complete (\(String(format: "%.2f", sys))s).")
                     return
                 }
-                
-                // CRITICAL SYNC FIX: Query the exact CoreAudio playback head currentTime
-                let elapsedAudio = player.currentTime - 0.35
-                
-                // Scale the fallback timeline back up by the speed factor
-                let elapsed = elapsedAudio * speed
-                
+                let elapsed = (player.currentTime - 0.35) * speed
                 if self.isFirstTick {
                     self.isFirstTick = false
-                    logDebug("[Animation] First active tick of Fallback animation. System Elapsed: \(String(format: "%.3f", elapsedSys))s | Player currentTime (offset/scaled): \(String(format: "%.3f", elapsed))s")
+                    logDebug("[Animation] First fallback tick. sys=\(String(format: "%.3f", sys))s elapsed(scaled)=\(String(format: "%.3f", elapsed))s")
                 }
-                
-                // Procedural syllable/vocal pulse fallback
                 if elapsed >= 0 {
                     let pulse = 1.0 + 0.18 * sin(elapsed * 22.0) * cos(elapsed * 8.0)
                     withAnimation(.spring(response: 0.12, dampingFraction: 0.55)) {
-                        if pulse > 0.95 {
-                            self.talkScale = CGFloat(pulse)
-                        } else {
-                            self.talkScale = 1.0
-                        }
+                        self.talkScale = pulse > 0.95 ? CGFloat(pulse) : 1.0
                     }
                 } else {
-                    withAnimation(.spring()) {
-                        self.talkScale = 1.0
-                    }
+                    withAnimation(.spring()) { self.talkScale = 1.0 }
                 }
             }
         }

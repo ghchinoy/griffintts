@@ -31,7 +31,15 @@ struct ContentView: View {
                 onSpeak: triggerSynthesis,
                 onStop: coordinator.stop
             )
-            .navigationTitle("Speech Designer")
+            // Suppress the default centred system title; render our own flush-left.
+            .navigationTitle("")
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Text("Speech Designer")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                }
+            }
             // min/ideal/max lets the user drag the gutter; sidebar grows with the window
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 480)
             .toolbar(removing: .sidebarToggle)

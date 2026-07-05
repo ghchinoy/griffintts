@@ -177,7 +177,8 @@ func executeSynthesis(args []string) {
 
 		if !fileExists(enginePath) {
 			printErrorAndHint("Error: Natively compiled hts_engine binary not found.",
-				"Proactive Hint: Run 'make griffintts' to compile the hts_engine_API and wrappers.")
+				"Proactive Hint: hts_engine_API is a separate clone, not built by 'make'. See README.md's "+
+					"'hts_engine_API (required for --native mode only)' section for the clone+cmake steps.")
 			os.Exit(1)
 		}
 

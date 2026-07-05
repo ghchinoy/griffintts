@@ -39,13 +39,28 @@ ssh root@mars-bond-mesquite-cotton.local \
   | tar -xzf - -C tools/griffintts/assets/lib/
 ```
 
-The full extraction process and rationale for each file is documented in [`docs/architecture.md`](docs/architecture.md) and the original extraction task `jibo-8uu` in the `bd` issue tracker.
+The full extraction process and rationale for each file is documented in [`docs/architecture.md`](docs/architecture.md).
 
-### 2. Host Tools
+### 2. `hts_engine_API` (required for `--native` mode only)
+
+The `--native` synthesis path shells out to a natively-compiled `hts_engine` binary. It isn't vendored in this repo, it's a nested third-party project with its own build system, so clone and build it yourself:
+
+```bash
+git clone https://github.com/r9y9/hts_engine_API.git tools/griffintts/hts_engine_API
+cd tools/griffintts/hts_engine_API/src
+mkdir -p build && cd build
+cmake ..
+make
+```
+
+This should produce `tools/griffintts/hts_engine_API/src/build/bin/hts_engine`, which is exactly where `griffintts --native` looks for it. `tools/griffintts/hts_engine_API/` is gitignored; container mode (the default, high-fidelity path) doesn't need this at all.
+
+### 3. Host Tools
 
 Ensure the following are installed on your Mac:
 - **FFmpeg** — converts raw PCM output to WAV (`brew install ffmpeg`)
 - **Apple Container Platform** — required for container mode (primary high-fidelity voice); optional for `--native` mode
+- **CMake** — only needed to build `hts_engine_API` above, for `--native` mode (`brew install cmake`)
 
 ---
 
@@ -138,4 +153,4 @@ Since the synthesizer runs as a daemon inside a background container, you can ma
 
 For detailed reverse-engineering findings, dynamic library dependency maps, and explanations of how we intercepted ALSA using virtual configuration files, see:
 - **[Griffin TTS Technical Architecture & Findings](docs/architecture.md)**
-- **[Subsystem Guide: Griffin TTS](../../docs/subsystems/griffin-tts.md)**
+- **[Prosody and Affect: what the `/tts_speak` API actually controls](docs/prosody_and_affect.md)**

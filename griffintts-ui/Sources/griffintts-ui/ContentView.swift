@@ -161,14 +161,20 @@ struct ContentView: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        // WindowResizer drives the actual NSWindow frame change
+        // WindowResizer drives the actual NSWindow.setFrame() call.
+        // We use .background so it has zero layout impact on the SwiftUI tree.
+        // DO NOT also add a fixed .frame(width:height:) here — conflicting
+        // ownership between SwiftUI and AppKit causes the NSGenericException
+        // constraint loop crash.
         .background(
             WindowResizer(
-                width: isDrawerOpen ? expandedWidth : compactWidth,
-                height: windowHeight
-            ).frame(width: 0, height: 0)
+                targetWidth:  isDrawerOpen ? expandedWidth : compactWidth,
+                targetHeight: windowHeight
+            )
+            .frame(width: 0, height: 0) // zero-size so it has no layout effect
         )
-        .frame(width: isDrawerOpen ? expandedWidth : compactWidth, height: windowHeight)
+        // Layout hints only (not fixed constraints) so SwiftUI doesn't fight AppKit
+        .frame(minWidth: compactWidth, idealWidth: isDrawerOpen ? expandedWidth : compactWidth)
         .preferredColorScheme(.dark)
         .onAppear { startBlinking() }
         .onDisappear { blinkTimer?.invalidate(); animationTimer?.invalidate() }

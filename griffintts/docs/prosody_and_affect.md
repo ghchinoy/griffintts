@@ -1,6 +1,6 @@
 # Jibo Griffin TTS: Prosody, ESML Markup & Vocal Affect
 
-This document explains the linguistic, phonetic, and DSP mechanisms that govern Jibo's expressive vocal personality ("Griffin"). It was originally written from architectural inference (JS SDK field names, config key names, typical SSML conventions) and has since been **empirically re-tested against the live emulated container**. Every mechanism below is labeled with its confirmation status, per this project's documentation standard (see `docs/documentation-plan.md`, "Confirmed vs. inferred").
+This document explains the linguistic, phonetic, and DSP mechanisms that govern Jibo's expressive vocal personality ("Griffin"). It was originally written from architectural inference (JS SDK field names, config key names, typical SSML conventions) and has since been **empirically re-tested against the live emulated container**. Every mechanism below is labeled with its confirmation status, per this project's documentation standard (see `docs/README.md`, "Confirmed vs. inferred").
 
 **Reproduce these results yourself**: `.venv/bin/python tools/griffintts/scripts/confirm_prosody_params.py` (requires the `tts_run` container running). Raw numeric results from the confirmation run are included inline below.
 

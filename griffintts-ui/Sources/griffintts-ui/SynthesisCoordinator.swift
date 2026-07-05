@@ -39,14 +39,14 @@ final class SynthesisCoordinator: ObservableObject {
     }
 
     // ── Synthesize ────────────────────────────────────────────────────
-    func synthesize(prompt: String, isNative: Bool, speedFactor: Double, projectRoot: URL) async {
+    func synthesize(prompt: String, isNative: Bool, speedFactor: Double, griffinttsRepoRoot: URL) async {
         let wavPath = "/tmp/griffintts-ui.wav"
         var timings: [TokenTime] = []
         if !isNative { timings = await fetchTokenTimings(text: prompt) }
         logDebug("[Timing] \(timings.count) tokens received.")
         var speechDuration: Double = 0.0
         if let last = timings.last { speechDuration = (last.end / speedFactor) + 0.40 }
-        let ttsBin = projectRoot.appendingPathComponent("tools/bin/griffintts").path
+        let ttsBin = griffinttsRepoRoot.appendingPathComponent("griffintts/bin/griffintts").path
         var finalArgs = ["--ow", wavPath]
         if isNative { finalArgs.append("--native") } else if speechDuration > 0 {
             finalArgs.append(contentsOf: ["--duration", String(format: "%.2f", speechDuration)])
@@ -56,7 +56,11 @@ final class SynthesisCoordinator: ObservableObject {
         logDebug("[Subprocess] \(ttsBin) \(finalArgs.joined(separator: " "))")
         let success = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             let argsToPass = finalArgs
-            let currentDir = projectRoot
+            // griffintts' own binary resolves its assets relative to its own
+            // directory when invoked this way (see its main.go fallback
+            // path) — so the subprocess's CWD needs to be griffintts/
+            // itself, not its parent.
+            let currentDir = griffinttsRepoRoot.appendingPathComponent("griffintts")
             DispatchQueue.global(qos: .userInitiated).async {
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: ttsBin)

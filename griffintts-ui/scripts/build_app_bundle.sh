@@ -5,13 +5,17 @@
 # high-resolution .icns file, and writes standard Info.plist.
 #
 # Usage:
-#     ./tools/griffintts-ui/scripts/build_app_bundle.sh
+#     ./scripts/build_app_bundle.sh   (run from the griffintts-ui package root, e.g. via 'make build')
 
 set -e
 
-PROJECT_ROOT="/Users/ghchinoy/projects/jibo"
+# Resolve the package root relative to this script's own location, not a
+# hardcoded absolute path — this makes the script work identically whether
+# it's living inside the jibo monorepo (tools/griffintts-ui/) or as its own
+# standalone repo root.
+PACKAGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="GriffinTTS"
-BUNDLE_DIR="${PROJECT_ROOT}/tools/bin/${APP_NAME}.app"
+BUNDLE_DIR="${PACKAGE_ROOT}/bin/${APP_NAME}.app"
 CONTENTS_DIR="${BUNDLE_DIR}/Contents"
 MCOS_DIR="${CONTENTS_DIR}/MacOS"
 RES_DIR="${CONTENTS_DIR}/Resources"
@@ -20,7 +24,7 @@ echo "=== Starting GriffinTTS App Bundle Build ==="
 
 # 1. Compile production Release build of Swift SwiftUI app
 echo "Compiling optimized Swift SwiftUI production build..."
-swift build --package-path "${PROJECT_ROOT}/tools/griffintts-ui" -c release
+swift build --package-path "${PACKAGE_ROOT}" -c release
 
 # 2. Create standard App Bundle directory structures
 echo "Structuring App Bundle directory layout..."
@@ -29,7 +33,7 @@ mkdir -p "${RES_DIR}"
 
 # 3. Copy compiled Swift binary into MacOS/
 echo "Copying executable..."
-cp "${PROJECT_ROOT}/tools/griffintts-ui/.build/release/griffintts-ui" "${MCOS_DIR}/griffintts-ui"
+cp "${PACKAGE_ROOT}/.build/release/griffintts-ui" "${MCOS_DIR}/griffintts-ui"
 chmod +x "${MCOS_DIR}/griffintts-ui"
 
 # 4. Write standard, valid Info.plist
@@ -66,7 +70,7 @@ cat << 'EOF' > "${CONTENTS_DIR}/Info.plist"
 EOF
 
 # 5. Create high-resolution .icns file from generated PNG
-MASTER_PNG=$(ls "${PROJECT_ROOT}/tools/griffintts-ui/Resources"/*.png | head -n 1 || true)
+MASTER_PNG=$(ls "${PACKAGE_ROOT}/Resources"/*.png | head -n 1 || true)
 
 if [ -n "${MASTER_PNG}" ] && [ -f "${MASTER_PNG}" ]; then
     echo "Master PNG icon found: ${MASTER_PNG}"

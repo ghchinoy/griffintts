@@ -17,7 +17,7 @@ A gorgeous, highly interactive macOS desktop application featuring Jibo's iconic
 *   **Procedural Fallback**: If timings are unavailable (e.g. in native fallback mode), the app activates a beautiful, organic procedural vocal wiggler (using sine/cosine waves) to simulate natural Jibo-style mouth-syncing.
 
 ### 3. Sane Subprocess Coordination & Fallbacks
-*   **Unified Go CLI Backend**: The SwiftUI app runs our compiled `tools/bin/griffintts` binary as a background `Process`. This ensures Jibo's Go utility handles all container checks, ALSA-file-redirection seeks, and PCM-to-WAV conversions.
+*   **Unified Go CLI Backend**: The SwiftUI app finds and runs the sibling `griffintts` CLI's compiled binary (`../griffintts/bin/griffintts`) as a background `Process`. This ensures Jibo's Go utility handles all container checks, ALSA-file-redirection seeks, and PCM-to-WAV conversions. This only works if `griffintts` has been built too (`make -C ../griffintts build`, or `make build` from this pair's shared parent directory).
 *   **Dual-Mode Toggle**: Check the **"Standalone Native Mode"** box to bypass the emulated container and run standard native HTS synthesis locally on macOS in under 50ms.
 
 ---
@@ -26,19 +26,20 @@ A gorgeous, highly interactive macOS desktop application featuring Jibo's iconic
 
 The application targets **macOS Sonoma (.macOS(.v14))** or newer to support modern continuous cursor tracking, and compiles natively using Apple's Swift toolchain.
 
-Build the application from the root directory:
+Build the sibling `griffintts` CLI first, then this app bundle:
 ```bash
-make griffintts-ui
+make -C ../griffintts build   # or: make build, from this pair's shared parent directory
+make build
 ```
-This compiles the Swift package using the optimized production Release configuration and saves the standalone binary directly to **`./tools/bin/griffintts-ui`**.
+This compiles the Swift package using the optimized production Release configuration and packages it into **`./bin/GriffinTTS.app`**.
 
 ---
 
 ## Usage & Keyboard Focus
 
-Launch the compiled desktop application from your terminal:
+Launch the compiled desktop application:
 ```bash
-./tools/bin/griffintts-ui
+open bin/GriffinTTS.app
 ```
 
 ### Keyboard Focus & Standalone Integration

@@ -149,16 +149,22 @@ struct ContentView: View {
         }
     }
 
-    private func findProjectRoot() -> URL? {
+    // Finds the directory that has both `griffintts/` and `griffintts-ui/`
+    // as siblings — `tools/` inside the jibo monorepo today, or the repo
+    // root once griffintts-ui ships as its own standalone repo alongside
+    // griffintts. This is a fixed structural relationship (the built .app
+    // always ends up at <root>/griffintts-ui/bin/GriffinTTS.app), not a
+    // search for a monorepo-specific marker file, so it resolves correctly
+    // in both contexts without caring which one it's actually running in.
+    private func findGriffinttsRepoRoot() -> URL? {
         guard let exeURL = Bundle.main.executableURL else { return nil }
-        var dir = exeURL.deletingLastPathComponent()
-        for _ in 0..<10 {
-            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("AGENTS.md").path) { return dir }
-            let parent = dir.deletingLastPathComponent()
-            if parent.path == dir.path { break }
-            dir = parent
+        // exeURL: <root>/griffintts-ui/bin/GriffinTTS.app/Contents/MacOS/griffintts-ui
+        var dir = exeURL.deletingLastPathComponent() // .../Contents/MacOS/
+        for _ in 0..<5 {
+            dir = dir.deletingLastPathComponent()
         }
-        return nil
+        let griffinttsBin = dir.appendingPathComponent("griffintts/bin/griffintts")
+        return FileManager.default.fileExists(atPath: griffinttsBin.path) ? dir : nil
     }
 
     private func triggerSynthesis() {
@@ -169,12 +175,12 @@ struct ContentView: View {
         coordinator.isSynthesizing = true
         coordinator.statusMessage = "Synthesizing..."
         coordinator.statusColor = .synthesizing
-        guard let projectRoot = findProjectRoot() else {
-            coordinator.statusMessage = "Project root not found!"
+        guard let griffinttsRepoRoot = findGriffinttsRepoRoot() else {
+            coordinator.statusMessage = "griffintts binary not found!"
             coordinator.statusColor = .error
             coordinator.isSynthesizing = false
             return
         }
-        Task { await coordinator.synthesize(prompt: promptText, isNative: isNative, speedFactor: speedFactor, projectRoot: projectRoot) }
+        Task { await coordinator.synthesize(prompt: promptText, isNative: isNative, speedFactor: speedFactor, griffinttsRepoRoot: griffinttsRepoRoot) }
     }
 }

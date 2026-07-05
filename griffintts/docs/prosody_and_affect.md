@@ -106,11 +106,13 @@ If the C++ markup parser encounters an invalid inline tag or sound effect, it lo
 | Automatic prosody from G2P/HTS context | ✅ Confirmed (structural) | No parameters needed; inherent to the acoustic model |
 | `duration_stretch` | ✅ Confirmed, inverted semantics | Use as `baseline / value`, not `baseline * value` |
 | `pitch`, `pitchBandwidth`, `volume`, `whisper` | ❌ Disconfirmed over HTTP | No measurable effect on `/tts_speak` endpoints |
-| Jibo Vocal Affect / Speaking Styles | ✅ Confirmed | Supports `neutral`, `excited`, `confused`, `sheepish`, `confident`, `enthusiastic`, `news` preprocessed upstream via `<es cat="..."/>` |
-| Jibonics / Sound Effects | ✅ Confirmed | Parsed natively inside the C++ engine via **`<audio>`** and **`<audioBreak>`** tags |
-| Phonetic Pronunciation Overrides | ✅ Confirmed | Supported natively via inline **`Pron`**, **`PronForce`**, and **`PronWords`** tags |
+| Jibo Vocal Affect / Speaking Styles | ❌ Disconfirmed over HTTP | Enum names confirmed in `libJiboTTSService.so` but all 7 styles produce identical RMS/centroid over `/tts_speak`. Must be applied upstream at JS-SDK layer. |
+| Jibonics / Sound Effects `<audio>` | ❌ Disconfirmed over HTTP | `<audio name="woo_hoo_hoo" />` confirmed spoken as literal text via `/tts_token_times`. The strings exist in the compiled binary but are only reachable via the JS-SDK layer. |
+| Phonetic Pronunciation `[Pron: ...]` | ❌ Disconfirmed over HTTP | Spoken as literal characters. Same layer restriction as Jibonics. |
+| Pause tokens `[lpau]` / `[spau]` | ❌ Disconfirmed over HTTP | Appear as explicit tokens in `/tts_token_times`, duration increase is Jibo speaking the bracket characters, not a silence. |
+| `<break/>` / `<break time="..."/>` | ❌ Disconfirmed over HTTP | Spoken as literal text. `<break time="500ms"/>` produces `~3s` of Jibo reading the tag attributes aloud. |
 
-**Net result: the only confirmed, functioning "lever of control" beyond plain text is `duration_stretch`.** This substantially changes the scope of what a "Speech Designer Playground" UI can responsibly expose today — see the rescoped `jibo-6yu` epic.
+**Net result: no inline markup or request-body field beyond `duration_stretch` produces any effect through the raw `/tts_speak` HTTP API in this container configuration. All markup processing (emotion, Jibonics, pauses, pronunciation) lives in the JS-SDK / `jibo-ssm` SpeechDelegate layer that is upstream of the HTTP endpoint we have access to. The griffintts-ui Speech Designer accepts plain text input only.**
 
 ---
 

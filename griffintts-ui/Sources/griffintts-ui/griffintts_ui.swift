@@ -47,7 +47,10 @@ struct GriffinTTSApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .navigationTitle("GriffinTTS")
+                // No navigationTitle here — NavigationSplitView sidebar carries
+                // "Speech Designer" and the detail column carries nothing, giving
+                // a clean visual where the eye fills the detail pane without an
+                // awkward title bar above it.
         }
         // d4m.3: Use default window style (removes HiddenTitleBarWindowStyle).
         // This restores the standard drag handle, traffic-light buttons, and

@@ -26,12 +26,13 @@ struct ContentView: View {
                 prompt: $prompt,
                 speedFactor: $speedFactor,
                 isNative: $isNative,
-                isSynthesizing: coordinator.isSynthesizing, // Bool, not Binding<Bool> — panel updated
+                isSynthesizing: coordinator.isSynthesizing,
                 audioPlayerIsPlaying: coordinator.audioPlayer?.isPlaying ?? false,
                 onSpeak: triggerSynthesis,
                 onStop: coordinator.stop
             )
-            .navigationSplitViewColumnWidth(260) // d4m.1
+            .navigationTitle("Speech Designer")
+            .navigationSplitViewColumnWidth(260)
             .toolbar(removing: .sidebarToggle)
 
         } detail: {

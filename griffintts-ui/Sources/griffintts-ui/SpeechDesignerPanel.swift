@@ -23,17 +23,8 @@ struct SpeechDesignerPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-
-            // ── Header ────────────────────────────────────────────────
-            Text("Speech Designer")
-                .font(.system(.headline, design: .rounded))
-                .foregroundColor(.primary)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
-
-            Divider()
-
+            // "Speech Designer" title is supplied by .navigationTitle in ContentView;
+            // no manual header needed here.
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
 

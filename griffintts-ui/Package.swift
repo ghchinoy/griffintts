@@ -1,4 +1,5 @@
 // swift-tools-version: 6.3
+// GriffinTTS v0.2.0
 import PackageDescription
 
 let package = Package(

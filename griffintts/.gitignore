@@ -1,0 +1,10 @@
+# Compiled binaries
+/bin/
+
+# Local workspace assets pulled from a live Jibo unit — proprietary,
+# machine-specific, never commit. See README.md's "Voice Assets" section.
+/assets/
+/hts_engine_API/
+**/*.wav
+**/*.raw
+**/*.lab

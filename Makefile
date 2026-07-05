@@ -1,24 +1,27 @@
-BIN := ./bin
-
-.PHONY: all build griffintts griffintts-ui clean
+.PHONY: all build griffintts griffintts-ui test clean help
 
 all: build
 
-## build: compile all tools in the tools workspace into ./bin
+## build: compile griffintts and griffintts-ui via their own independent Makefiles
 build: griffintts griffintts-ui
 
-## griffintts: build the local Griffin TTS speech synthesizer wrapper
+## griffintts: build the local Griffin TTS speech synthesizer wrapper (see griffintts/Makefile)
 griffintts:
-	@mkdir -p $(BIN)
-	go build -C griffintts -o ../$(BIN)/griffintts .
-	@echo "  built $(BIN)/griffintts"
+	$(MAKE) -C griffintts build
 
-## griffintts-ui: build the Jibo SwiftUI face and sync speech player app bundle
+## griffintts-ui: build the Jibo SwiftUI face and sync speech player app bundle (see griffintts-ui/Makefile)
 griffintts-ui:
-	@mkdir -p $(BIN)
-	./griffintts-ui/scripts/build_app_bundle.sh
+	$(MAKE) -C griffintts-ui build
 
-## clean: remove the tools bin directory
+## test: run griffintts' test suite (griffintts-ui has no automated tests yet)
+test:
+	$(MAKE) -C griffintts test
+
+## clean: clean both tools' own build outputs
 clean:
-	rm -rf $(BIN)
-	@echo "  cleaned $(BIN)"
+	$(MAKE) -C griffintts clean
+	$(MAKE) -C griffintts-ui clean
+
+## help: list available targets
+help:
+	@grep -E '^## ' Makefile | sed 's/## /  /'

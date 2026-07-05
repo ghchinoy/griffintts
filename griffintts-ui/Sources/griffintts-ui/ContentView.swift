@@ -99,6 +99,8 @@ struct ContentView: View {
             .toolbar(.hidden, for: .automatic)
         }
         .navigationSplitViewStyle(.balanced)
+        // Minimum usable size — prevents collapsing to zero without locking resize.
+        .frame(minWidth: 500, minHeight: 420)
         .preferredColorScheme(.dark)
         .onAppear { startBlinking() }
         .onDisappear { blinkTimer?.invalidate(); coordinator.stop() }

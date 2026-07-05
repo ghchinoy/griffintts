@@ -52,13 +52,11 @@ struct GriffinTTSApp: App {
                 // a clean visual where the eye fills the detail pane without an
                 // awkward title bar above it.
         }
-        // d4m.3: Use default window style (removes HiddenTitleBarWindowStyle).
-        // This restores the standard drag handle, traffic-light buttons, and
-        // full-screen zoom. The NavigationSplitView provides its own chrome.
-        //
-        // d4m.1: Constrain to content size so the window cannot collapse to zero.
-        .windowResizability(.contentSize)
-        // d4m.1: Set a sensible default launch size.
+        // Standard resizable window — user can freely resize.
+        // .contentSize was used to prevent collapse-to-zero but it also blocks
+        // all user resizing. Use .automatic (the default) and enforce a minimum
+        // via .frame(minWidth:minHeight:) on ContentView instead.
+        .windowResizability(.automatic)
         .defaultSize(width: 780, height: 520)
         // ── Native macOS Menu Bar (HIG: all commands must be menu-discoverable)
         .commands {

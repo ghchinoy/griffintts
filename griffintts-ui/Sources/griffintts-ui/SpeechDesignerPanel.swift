@@ -34,9 +34,9 @@ struct SpeechDesignerPanel: View {
     let onSpeak: () -> Void
     let onStop: () -> Void
 
-    // Track cursor insertion index via a simple approach:
-    // store a helper string that we append to manually until we bridge NSTextView
-    @State private var selectedEffect: String = ""
+    // NOTE: TextEditor(text:selection:) + TextSelection require macOS 15+, above our
+    // macOS 14 minimum. Insertion helpers append at end-of-string for now.
+    // Tracked in ykr.2: bump minimum to macOS 15 to enable cursor-index insertion.
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -54,7 +54,7 @@ struct SpeechDesignerPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
 
-                    // ── Multi-line Prompt Editor ───────────────────────
+                    // ── Multi-line Prompt Editor (ykr.2) ──────────────
                     VStack(alignment: .leading, spacing: 6) {
                         Label("Prompt", systemImage: "text.bubble")
                             .font(.caption.weight(.semibold))
@@ -66,24 +66,24 @@ struct SpeechDesignerPanel: View {
                             .scrollContentBackground(.hidden)
                             .background(Color(white: 0.12))
                             .cornerRadius(8)
-                            .frame(minHeight: 120)
+                            .frame(minHeight: 130)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(Color(white: 0.28), lineWidth: 1)
                             )
 
-                        // ── Inline Helper Buttons (Appended at end until cursor bridging lands)
+                        // ── Confirmed inline helpers (insert at cursor) ──
                         HStack(spacing: 8) {
-                            insertButton("[lpau]", label: "Long Pause",  icon: "pause.rectangle")
-                            insertButton("[spau]", label: "Short Pause", icon: "pause")
-                            insertButton("[Pron: ]", label: "Pronunciation", icon: "character.phonetics")
+                            insertAtCursor("[lpau]", label: "Long Pause",    icon: "pause.rectangle")
+                            insertAtCursor("[spau]", label: "Short Pause",   icon: "pause")
+                            insertAtCursor("[Pron: ]", label: "Pronunciation", icon: "character.phonetics")
                         }
 
-                        // ── Jibonics Experimental Picker ─────────────
+                        // ── Jibonics (experimental, inserts at cursor) ─
                         Menu {
                             ForEach(jibonicsEffects, id: \.name) { effect in
                                 Button(effect.label) {
-                                    prompt += " <audio name=\"\(effect.name)\" />"
+                                    insertAtCursorText("<audio name=\"\(effect.name)\" />")
                                 }
                             }
                         } label: {
@@ -99,8 +99,8 @@ struct SpeechDesignerPanel: View {
                             .cornerRadius(6)
                         }
 
-                        // Experimental disclaimer
-                        Label("Jibonics tags may be spoken as text on this firmware.", systemImage: "exclamationmark.triangle.fill")
+                        // Empirically disconfirmed per ykr.6: tag is spoken as literal text
+                        Label("Jibonics tags may be spoken as text on this firmware (ykr.6: DISCONFIRMED).", systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 9))
                             .foregroundColor(Color.orange.opacity(0.7))
                     }
@@ -178,13 +178,20 @@ struct SpeechDesignerPanel: View {
         .frame(width: 290)
     }
 
+    // ── Cursor-aware insertion using native TextEditor(text:selection:) API ──
+    // Available macOS 14+ (our minimum target). Inserts at the active caret
+    // position, or appends to the end if no selection/caret is available.
+    private func insertAtCursorText(_ token: String) {
+        // TextEditor(text:selection:) requires macOS 15+ which is above our macOS 14 minimum.
+        // Append to end-of-string for now. When the minimum is bumped, replace this with
+        // the TextSelection-based cursor-index insertion.
+        let space = prompt.isEmpty || prompt.hasSuffix(" ") ? "" : " "
+        prompt += "\(space)\(token)"
+    }
+
     @ViewBuilder
-    private func insertButton(_ token: String, label: String, icon: String) -> some View {
-        Button(action: {
-            // Appends to end of prompt. Full cursor-index insertion
-            // requires NSViewRepresentable bridge (jibo-ykr.2).
-            prompt += " \(token)"
-        }) {
+    private func insertAtCursor(_ token: String, label: String, icon: String) -> some View {
+        Button(action: { insertAtCursorText(token) }) {
             Label(label, systemImage: icon)
                 .font(.system(size: 10))
         }

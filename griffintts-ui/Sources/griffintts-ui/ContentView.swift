@@ -172,6 +172,14 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .onAppear { startBlinking() }
         .onDisappear { blinkTimer?.invalidate(); animationTimer?.invalidate() }
+        // ── Menu Bar command receivers (HIG: every menu action routes here) ──
+        .onReceive(NotificationCenter.default.publisher(for: .griffinSpeak))        { _ in triggerSynthesis() }
+        .onReceive(NotificationCenter.default.publisher(for: .griffinStop))         { _ in triggerStop() }
+        .onReceive(NotificationCenter.default.publisher(for: .griffinToggleNative)) { _ in isNative.toggle() }
+        .onReceive(NotificationCenter.default.publisher(for: .griffinClearPrompt))  { _ in prompt = "" }
+        .onReceive(NotificationCenter.default.publisher(for: .griffinToggleDrawer)) { _ in
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) { isDrawerOpen.toggle() }
+        }
     }
 
     // MARK: - Actions

@@ -10,23 +10,23 @@ By leveraging user-mode ARM emulation inside a native macOS container machine, t
 
 ### 1. Voice Assets (required — must be pulled from a live Jibo unit)
 
-The `tools/griffintts/assets/` directory is **gitignored** and must be populated by extracting files directly from a live Jibo robot over SSH before anything here will work. Both synthesis modes depend on it:
+The `assets/` directory is **gitignored** and must be populated by extracting files directly from a live Jibo robot over SSH before anything here will work. Both synthesis modes depend on it:
 
 | Mode | Assets required |
 |---|---|
 | Container (primary) | `assets/en_us_world/`, `assets/bin/jibo-tts-service`, `assets/lib/*.so`, `assets/jibo-tts-service.json` |
 | Native (`--native`) | `assets/en_us/en_us.voice`, `assets/en_us/en_us.dictionary_full`, `assets/en_us/en_us.phones` |
 
-To extract from a live unit (replace hostname if your unit's mDNS name differs):
+To extract from a live unit (replace `mars-bond-mesquite-cotton.local` with your unit's mDNS hostname):
 ```bash
 # Voice model bundles
-scp -r root@mars-bond-mesquite-cotton.local:/usr/local/share/ttsservice/voices/en_us_world tools/griffintts/assets/
-scp -r root@mars-bond-mesquite-cotton.local:/usr/local/share/ttsservice/voices/en_us      tools/griffintts/assets/
+scp -r root@mars-bond-mesquite-cotton.local:/usr/local/share/ttsservice/voices/en_us_world assets/
+scp -r root@mars-bond-mesquite-cotton.local:/usr/local/share/ttsservice/voices/en_us      assets/
 
 # Jibo TTS service binary and config
-mkdir -p tools/griffintts/assets/bin tools/griffintts/assets/lib
-scp root@mars-bond-mesquite-cotton.local:/usr/local/bin/jibo-tts-service         tools/griffintts/assets/bin/
-scp root@mars-bond-mesquite-cotton.local:/usr/local/etc/jibo-tts-service.json    tools/griffintts/assets/
+mkdir -p assets/bin assets/lib
+scp root@mars-bond-mesquite-cotton.local:/usr/local/bin/jibo-tts-service         assets/bin/
+scp root@mars-bond-mesquite-cotton.local:/usr/local/etc/jibo-tts-service.json    assets/
 
 # Dynamic library dependencies (required for the container)
 ssh root@mars-bond-mesquite-cotton.local \
@@ -36,7 +36,7 @@ ssh root@mars-bond-mesquite-cotton.local \
              libPocoFoundation.so.48 libPocoJSON.so.48 libPocoUtil.so.48 \
              libPocoXML.so.48 libPocoNet.so.48 libPocoNetSSL.so.48 libPocoCrypto.so.48 \
              libpcre.so.1 libexpat.so.1 libz.so.1" \
-  | tar -xzf - -C tools/griffintts/assets/lib/
+  | tar -xzf - -C assets/lib/
 ```
 
 The full extraction process and rationale for each file is documented in [`docs/architecture.md`](docs/architecture.md).
@@ -46,14 +46,14 @@ The full extraction process and rationale for each file is documented in [`docs/
 The `--native` synthesis path shells out to a natively-compiled `hts_engine` binary. It isn't vendored in this repo, it's a nested third-party project with its own build system, so clone and build it yourself:
 
 ```bash
-git clone https://github.com/r9y9/hts_engine_API.git tools/griffintts/hts_engine_API
-cd tools/griffintts/hts_engine_API/src
+git clone https://github.com/r9y9/hts_engine_API.git hts_engine_API
+cd hts_engine_API/src
 mkdir -p build && cd build
 cmake ..
 make
 ```
 
-This should produce `tools/griffintts/hts_engine_API/src/build/bin/hts_engine`, which is exactly where `griffintts --native` looks for it. `tools/griffintts/hts_engine_API/` is gitignored; container mode (the default, high-fidelity path) doesn't need this at all.
+This should produce `hts_engine_API/src/build/bin/hts_engine`, which is exactly where `griffintts --native` looks for it. `hts_engine_API/` is gitignored; container mode (the default, high-fidelity path) doesn't need this at all.
 
 ### 3. Host Tools
 
@@ -109,21 +109,60 @@ Usage of bin/griffintts:
   -h, --help          help for griffintts
       --host string   TTS container host (default "localhost")
       --json          Output in machine-readable JSON format (AX)
+  -m, --markup        Treat input as affective markup (audio tags: style, pitch, duration, break,
+                      phoneme, say-as). Animation tags (anim, ssa, es) are stripped with a warning.
+                      Container mode only.
   -n, --native        Use the 100% native macOS HTS standalone synthesizer (no containers)
   -o, --ow string     Path to save the synthesized WAV file (default "output.wav")
   -p, --port string   TTS container port (default "8089")
+  -s, --speed float   Speaking speed multiplier (0.5 is slow, 2.0 is fast) (default 1.0)
 ```
 
-### 1. Shell Pipe / Stdin Support
+### 1. Affective Markup (`--markup`)
+
+Jibo's TTS daemon understands an XML-like markup dialect for audio affect. The `--markup` flag lets you author speech with real prosodic variation rendered by Jibo's own synthesis engine:
+
+```bash
+# Speaking style
+bin/griffintts --markup '<style set="enthusiastic">Hello! Great to see you.</style>'
+
+# Pitch adjustment
+bin/griffintts --markup '<pitch halftone="-5">Speaking in a lower register.</pitch>'
+
+# Real pause insertion
+bin/griffintts --markup 'One moment.<break size="0.8"/>Here is your answer.'
+
+# Phoneme override
+bin/griffintts --markup '<phoneme ph="b aa n ou">Bono</phoneme> is a musician.'
+
+# Spelling out
+bin/griffintts --markup '<say-as spell="jibo"/> is my name.'
+
+# Combined: animation tags are stripped, audio tags render
+bin/griffintts --markup '<anim cat="happy" nonBlocking="true">Sure!</anim> <style set="confident">Here is what I found.</style>'
+```
+
+**Confirmed speaking styles**: `neutral`, `excited` (marginal), `confused`, `sheepish`, `confident`, `enthusiastic`, `news`
+
+**Pitch subtypes**: `halftone`, `band`, `add`, `mult` — all produce measurable monotonic effects
+
+**Duration tag semantics**: `<duration stretch="2.0">` makes speech *slower* (opposite of the `--speed` flag, which uses `duration_stretch` as an inverse-rate multiplier)
+
+**Animation tags** (`<anim>`, `<ssa>`, `<es>`) are stripped — these require the robot's on-device animation system and cannot be rendered offline. Inner spoken text from bounded forms (e.g. `<anim cat="happy">Sure!</anim>`) is preserved.
+
+**Native mode** (`--native --markup`): markup tags are stripped and only plain text is synthesized. The native HTS pipeline has no markup engine.
+
+### 2. Shell Pipe / Stdin Support
 You can pipe text directly into `griffintts` via standard input:
 ```bash
 echo "Piped text is synthesized automatically." | bin/griffintts --native
 ```
 
-### 2. AX (Agent Experience) Output
-If `--json` is specified, all human status prints are suppressed, outputting only clean, machine-readable JSON data:
+### 3. AX (Agent Experience) Output
+If `--json` is specified, all human status prints are suppressed, outputting only clean, machine-readable JSON data. In `--markup` mode the JSON output includes which animation tags were stripped:
 ```bash
 bin/griffintts --json --native --ow native_test.wav "Validating agent-mode."
+bin/griffintts --markup --json '<anim cat="happy"/> <style set="confident">Done.</style>'
 ```
 
 ---
@@ -144,7 +183,7 @@ Since the synthesizer runs as a daemon inside a background container, you can ma
   If you need to force-rebuild the container environment:
   ```bash
   container rm -f tts_run
-  container build -t griffintts -f tools/griffintts/Containerfile tools/griffintts/
+  container build -t griffintts -f Containerfile .
   ```
 
 ---

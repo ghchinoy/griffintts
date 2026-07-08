@@ -10,9 +10,8 @@
 set -e
 
 # Resolve the package root relative to this script's own location, not a
-# hardcoded absolute path — this makes the script work identically whether
-# it's living inside the jibo monorepo (tools/griffintts-ui/) or as its own
-# standalone repo root.
+# hardcoded absolute path — this makes the script work regardless of where
+# the repo is cloned.
 PACKAGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="GriffinTTS"
 BUNDLE_DIR="${PACKAGE_ROOT}/bin/${APP_NAME}.app"

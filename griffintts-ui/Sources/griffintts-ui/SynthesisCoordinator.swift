@@ -39,20 +39,47 @@ final class SynthesisCoordinator: ObservableObject {
     }
 
     // ── Synthesize ────────────────────────────────────────────────────
-    func synthesize(prompt: String, isNative: Bool, speedFactor: Double, griffinttsRepoRoot: URL) async {
+    //
+    // Parameters:
+    //   prompt     — the plain text prompt (used for token timing fetch and
+    //                as the CLI argument in plain-text mode)
+    //   esmlPrompt — when non-nil, markup mode is active: this is the
+    //                prebuilt ESML string passed via --markup. Token timings
+    //                are fetched from `prompt` (plain text), not from
+    //                `esmlPrompt`, so mouth-sync stays accurate.
+    func synthesize(prompt: String, esmlPrompt: String? = nil, isNative: Bool, speedFactor: Double, griffinttsRepoRoot: URL) async {
         let wavPath = "/tmp/griffintts-ui.wav"
+        let isMarkup = esmlPrompt != nil
+
+        // Token timings always use plain text — the /tts_token_times endpoint
+        // doesn't parse markup and would return garbled timing data if given
+        // the ESML string. In markup mode we still pass `prompt` here.
         var timings: [TokenTime] = []
         if !isNative { timings = await fetchTokenTimings(text: prompt) }
-        logDebug("[Timing] \(timings.count) tokens received.")
+        logDebug("[Timing] \(timings.count) tokens received. markup=\(isMarkup)")
+
         var speechDuration: Double = 0.0
         if let last = timings.last { speechDuration = (last.end / speedFactor) + 0.40 }
         let ttsBin = griffinttsRepoRoot.appendingPathComponent("griffintts/bin/griffintts").path
         var finalArgs = ["--ow", wavPath]
-        if isNative { finalArgs.append("--native") } else if speechDuration > 0 {
+        if isNative {
+            finalArgs.append("--native")
+        } else if speechDuration > 0 {
             finalArgs.append(contentsOf: ["--duration", String(format: "%.2f", speechDuration)])
         }
-        finalArgs.append(contentsOf: ["--speed", String(format: "%.2f", speedFactor)])
-        finalArgs.append(prompt)
+
+        if let esml = esmlPrompt, !isNative {
+            // Markup mode: pass --markup with the ESML string.
+            // Speed (duration_stretch) is NOT passed — the <duration> tag in
+            // the ESML string controls timing instead (opposite semantics).
+            finalArgs.append("--markup")
+            finalArgs.append(esml)
+        } else {
+            // Plain-text mode: pass --speed and the raw prompt.
+            finalArgs.append(contentsOf: ["--speed", String(format: "%.2f", speedFactor)])
+            finalArgs.append(prompt)
+        }
+
         logDebug("[Subprocess] \(ttsBin) \(finalArgs.joined(separator: " "))")
         let success = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             let argsToPass = finalArgs

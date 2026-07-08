@@ -1,0 +1,180 @@
+[
+  {
+    "id": "style_neutral",
+    "description": "Speaking style: neutral (acoustic baseline for all style comparisons)",
+    "markup": "<speak><STYLE set=\"NEUTRAL\">Hello there. I am Jibo, and I am here to help you.</STYLE></speak>",
+    "plain_equivalent": "Hello there. I am Jibo, and I am here to help you.",
+    "expected_acoustic": {
+      "note": "neutral is the reference; centroid_delta_hz_min not set — this entry defines the baseline"
+    }
+  },
+  {
+    "id": "style_enthusiastic",
+    "description": "Speaking style: enthusiastic — used for affirmations and celebratory moments",
+    "markup": "<speak><STYLE set=\"ENTHUSIASTIC\">Hey! That is absolutely fantastic! Let me look that up for you right now!</STYLE></speak>",
+    "plain_equivalent": "Hey! That is absolutely fantastic! Let me look that up for you right now!",
+    "expected_acoustic": {
+      "centroid_delta_hz_min": 50,
+      "note": "enthusiastic shows ~100Hz centroid shift vs neutral in oge.3 measurements"
+    }
+  },
+  {
+    "id": "style_confident",
+    "description": "Speaking style: confident — used for factual delivery and affirmations",
+    "markup": "<speak><STYLE set=\"CONFIDENT\">I found exactly what you were looking for. Here it is.</STYLE></speak>",
+    "plain_equivalent": "I found exactly what you were looking for. Here it is.",
+    "expected_acoustic": {
+      "centroid_delta_hz_min": 20,
+      "note": "confident sits between neutral and enthusiastic; modest positive centroid shift expected"
+    }
+  },
+  {
+    "id": "style_excited",
+    "description": "Speaking style: excited — higher energy than enthusiastic, used for surprising reveals",
+    "markup": "<speak><STYLE set=\"EXCITED\">Oh wow! I just learned something completely new about that!</STYLE></speak>",
+    "plain_equivalent": "Oh wow! I just learned something completely new about that!",
+    "expected_acoustic": {
+      "centroid_delta_hz_min": 50,
+      "note": "excited expected to show elevated centroid similar to enthusiastic"
+    }
+  },
+  {
+    "id": "style_sheepish",
+    "description": "Speaking style: sheepish — Jibo's error/apology register, slightly subdued",
+    "markup": "<speak><STYLE set=\"SHEEPISH\">Oops, I am sorry about that. I did not quite get that right.</STYLE></speak>",
+    "plain_equivalent": "Oops, I am sorry about that. I did not quite get that right.",
+    "expected_acoustic": {
+      "note": "sheepish expected to show lower centroid vs neutral; no hard threshold set pending measurement"
+    }
+  },
+  {
+    "id": "style_confused",
+    "description": "Speaking style: confused — used when Jibo does not understand the request",
+    "markup": "<speak><STYLE set=\"CONFUSED\">Hmm, I am not sure I understood that. Could you say it again?</STYLE></speak>",
+    "plain_equivalent": "Hmm, I am not sure I understood that. Could you say it again?",
+    "expected_acoustic": {
+      "note": "confused expected to show duration elongation and possibly lower centroid; measure empirically"
+    }
+  },
+  {
+    "id": "style_news",
+    "description": "Speaking style: news — flat, authoritative delivery for factual information",
+    "markup": "<speak><STYLE set=\"NEWS\">The current time is three forty five in the afternoon.</STYLE></speak>",
+    "plain_equivalent": "The current time is three forty five in the afternoon.",
+    "expected_acoustic": {
+      "note": "news style expected to show reduced centroid variance vs enthusiastic; compare duration"
+    }
+  },
+  {
+    "id": "pitch_halftone_neg5",
+    "description": "Pitch down 5 halftones — subdued, lower register",
+    "markup": "<speak><PITCH halftone=\"-5\">I am thinking about that right now.</PITCH></speak>",
+    "plain_equivalent": "I am thinking about that right now.",
+    "expected_acoustic": {
+      "centroid_delta_hz_min": 40,
+      "note": "negative halftone should produce measurably lower centroid; delta is absolute magnitude"
+    }
+  },
+  {
+    "id": "pitch_halftone_pos5",
+    "description": "Pitch up 5 halftones — brighter, more engaged register",
+    "markup": "<speak><PITCH halftone=\"+5\">I am thinking about that right now.</PITCH></speak>",
+    "plain_equivalent": "I am thinking about that right now.",
+    "expected_acoustic": {
+      "centroid_delta_hz_min": 40,
+      "note": "positive halftone should produce measurably higher centroid"
+    }
+  },
+  {
+    "id": "duration_stretch_slow",
+    "description": "Duration stretch 0.5 — slows speech by half (daemon inverse-rate semantics)",
+    "markup": "<speak><DURATION stretch=\"0.5\">Let me take a moment to think about that carefully.</DURATION></speak>",
+    "plain_equivalent": "Let me take a moment to think about that carefully.",
+    "expected_acoustic": {
+      "note": "duration_stretch=0.5 should approximately double output duration vs plain; validate against json_duration_stretch reference"
+    }
+  },
+  {
+    "id": "duration_stretch_fast",
+    "description": "Duration stretch 2.0 — speeds speech up (daemon inverse-rate semantics)",
+    "markup": "<speak><DURATION stretch=\"2.0\">Let me take a moment to think about that carefully.</DURATION></speak>",
+    "plain_equivalent": "Let me take a moment to think about that carefully.",
+    "expected_acoustic": {
+      "note": "duration_stretch=2.0 should approximately halve output duration vs plain; opposite of slow"
+    }
+  },
+  {
+    "id": "break_half_second",
+    "description": "Break 0.5s — short natural pause mid-sentence, e.g. before a reveal",
+    "markup": "<speak>Well<BREAK size=\"0.5\"/>here is what I found.</speak>",
+    "plain_equivalent": "Well here is what I found.",
+    "expected_acoustic": {
+      "note": "duration should increase by ~0.5s vs plain; confirms break inserts real silence not literal speech"
+    }
+  },
+  {
+    "id": "break_one_second",
+    "description": "Break 1.0s — longer dramatic pause, e.g. thinking beat before answer",
+    "markup": "<speak>Let me see<BREAK size=\"1.0\"/>ah, yes, I have got it.</speak>",
+    "plain_equivalent": "Let me see ah, yes, I have got it.",
+    "expected_acoustic": {
+      "note": "duration should increase by ~1.0s vs plain"
+    }
+  },
+  {
+    "id": "phoneme_override",
+    "description": "Phoneme override — pronunciation correction using Combilex phoneme set",
+    "markup": "<speak><phoneme ph=\"b aa n ou\">Bono</phoneme> is a musician.</speak>",
+    "plain_equivalent": "Bono is a musician.",
+    "expected_acoustic": {
+      "note": "byte count should differ from plain if phoneme tag is parsed; listen for pronunciation shift"
+    }
+  },
+  {
+    "id": "say_as_spell",
+    "description": "Say-as spell — letter-by-letter pronunciation for abbreviations",
+    "markup": "<speak>The robot is called <say-as spell=\"jibo\"/>.</speak>",
+    "plain_equivalent": "The robot is called jibo.",
+    "expected_acoustic": {
+      "note": "duration should increase vs plain (spelling out letters takes longer than pronouncing the word); listen for j-i-b-o"
+    }
+  },
+  {
+    "id": "combined_greeting_enthusiastic",
+    "description": "Realistic Jibo greeting: enthusiastic style with a short leading break",
+    "markup": "<speak><STYLE set=\"ENTHUSIASTIC\"><BREAK size=\"0.2\"/>Hey there! Great to see you again! What can I do for you today?</STYLE></speak>",
+    "plain_equivalent": "Hey there! Great to see you again! What can I do for you today?",
+    "expected_acoustic": {
+      "centroid_delta_hz_min": 50,
+      "note": "combined: leading break + enthusiastic style; centroid shift from style should dominate"
+    }
+  },
+  {
+    "id": "combined_confirmation_confident",
+    "description": "Realistic Jibo confirmation: confident style, plain phrasing, news cadence",
+    "markup": "<speak><STYLE set=\"CONFIDENT\">Got it. I will take care of that for you right now.</STYLE></speak>",
+    "plain_equivalent": "Got it. I will take care of that for you right now.",
+    "expected_acoustic": {
+      "centroid_delta_hz_min": 20,
+      "note": "confident delivery for a task-completion confirmation; modest style shift expected"
+    }
+  },
+  {
+    "id": "combined_apology_sheepish",
+    "description": "Realistic Jibo apology: sheepish style with a thinking pause",
+    "markup": "<speak><STYLE set=\"SHEEPISH\">Oh no<BREAK size=\"0.3\"/>I am really sorry about that. Let me try again.</STYLE></speak>",
+    "plain_equivalent": "Oh no I am really sorry about that. Let me try again.",
+    "expected_acoustic": {
+      "note": "sheepish + embedded break; duration should exceed plain by ~0.3s minimum from the break alone"
+    }
+  },
+  {
+    "id": "combined_thinking_pause_confused",
+    "description": "Realistic Jibo thinking aloud: confused style, raised pitch, deliberate pace",
+    "markup": "<speak><STYLE set=\"CONFUSED\"><PITCH halftone=\"+2\">Hmm<BREAK size=\"0.5\"/>I am not quite sure what you mean by that. Could you tell me more?</PITCH></STYLE></speak>",
+    "plain_equivalent": "Hmm I am not quite sure what you mean by that. Could you tell me more?",
+    "expected_acoustic": {
+      "note": "nested PITCH inside CONFUSED style; duration should exceed plain from the break; centroid effect from both style and pitch"
+    }
+  }
+]

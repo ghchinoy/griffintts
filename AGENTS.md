@@ -31,9 +31,9 @@ before you ever `git add` anything, not after.
 `griffintts-ui` finds and launches `griffintts`'s compiled binary at
 runtime. This used to search upward from the app bundle's location for a
 file called `AGENTS.md` to orient itself, a real bug: that file only
-existed in the private monorepo this project used to live in exclusively,
-so the app would have silently failed to find its own CLI backend the
-moment it ran anywhere else, including this repo.
+existed in a parent directory with a specific structure, so the app would
+have silently failed to find its own CLI backend the moment it ran in any
+other checkout layout, including this repo.
 
 The fix, and the pattern to preserve: `findGriffinttsRepoRoot()` in
 `griffintts-ui/Sources/griffintts-ui/ContentView.swift` computes a fixed
@@ -41,8 +41,8 @@ The fix, and the pattern to preserve: `findGriffinttsRepoRoot()` in
 (`<root>/griffintts-ui/bin/GriffinTTS.app/Contents/MacOS/griffintts-ui` is
 always 5 levels below `<root>`, and `<root>/griffintts/bin/griffintts` is
 always the sibling binary), instead of searching for a marker file. Do not
-reintroduce a marker-file search here, it silently breaks the moment this
-code runs somewhere the marker doesn't exist.
+reintroduce a marker-file search — it silently breaks the moment this code
+runs in a directory that doesn't contain the expected marker.
 
 ## Build script portability
 

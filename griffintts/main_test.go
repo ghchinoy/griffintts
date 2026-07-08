@@ -125,3 +125,158 @@ func TestGenerateLabels(t *testing.T) {
 func containsSubstring(str, sub string) bool {
 	return len(str) >= len(sub) && (str == sub || (len(sub) > 0 && (str[:len(sub)] == sub || containsSubstring(str[1:], sub))))
 }
+
+// ---------------------------------------------------------------------------
+// TestPreprocessMarkup — pure unit tests; no container required.
+// ---------------------------------------------------------------------------
+
+func TestPreprocessMarkup(t *testing.T) {
+	t.Run("plain_text_passthrough", func(t *testing.T) {
+		// Plain text with no tags must be wrapped in <speak> with no stripped tags.
+		result := preprocessMarkup("Hello, I am Jibo.")
+		want := "<speak>Hello, I am Jibo.</speak>"
+		if result.prompt != want {
+			t.Errorf("prompt mismatch:\n  got  %q\n  want %q", result.prompt, want)
+		}
+		if len(result.strippedTags) != 0 {
+			t.Errorf("expected no strippedTags, got %v", result.strippedTags)
+		}
+		if result.hadSpeakWrapper {
+			t.Errorf("expected hadSpeakWrapper=false for plain text input")
+		}
+	})
+
+	t.Run("audio_tags_preserved", func(t *testing.T) {
+		// Audio-channel tags must survive unchanged; only anim/ssa/es are stripped.
+		input := `<style set="enthusiastic">Hello! Great to see you today.</style>`
+		result := preprocessMarkup(input)
+		want := `<speak><style set="enthusiastic">Hello! Great to see you today.</style></speak>`
+		if result.prompt != want {
+			t.Errorf("prompt mismatch:\n  got  %q\n  want %q", result.prompt, want)
+		}
+		if len(result.strippedTags) != 0 {
+			t.Errorf("expected no strippedTags for audio-only input, got %v", result.strippedTags)
+		}
+	})
+
+	t.Run("self_closing_anim_stripped", func(t *testing.T) {
+		// Self-closing <anim .../> must be removed; text after must be preserved.
+		input := `<anim cat="happy"/> text`
+		result := preprocessMarkup(input)
+		want := "<speak>text</speak>"
+		if result.prompt != want {
+			t.Errorf("prompt mismatch:\n  got  %q\n  want %q", result.prompt, want)
+		}
+		if len(result.strippedTags) != 1 {
+			t.Errorf("expected 1 strippedTag, got %d: %v", len(result.strippedTags), result.strippedTags)
+		}
+		if !containsSubstring(result.strippedTags[0], "anim") {
+			t.Errorf("strippedTag[0] should mention 'anim', got %q", result.strippedTags[0])
+		}
+	})
+
+	t.Run("bounded_anim_inner_text_kept", func(t *testing.T) {
+		// Bounded <anim>inner</anim> must keep the inner spoken text.
+		input := `<anim cat="happy">Sure!</anim> more text`
+		result := preprocessMarkup(input)
+		want := "<speak>Sure! more text</speak>"
+		if result.prompt != want {
+			t.Errorf("prompt mismatch:\n  got  %q\n  want %q", result.prompt, want)
+		}
+		if len(result.strippedTags) != 1 {
+			t.Errorf("expected 1 strippedTag, got %d: %v", len(result.strippedTags), result.strippedTags)
+		}
+		if !containsSubstring(result.strippedTags[0], "anim") {
+			t.Errorf("strippedTag[0] should mention 'anim', got %q", result.strippedTags[0])
+		}
+	})
+
+	t.Run("ssa_self_closing_stripped", func(t *testing.T) {
+		// <ssa .../> self-closing must be stripped; result may be empty inside <speak>.
+		input := `<ssa cat="proud"/>`
+		result := preprocessMarkup(input)
+		// After stripping there may be trailing whitespace inside speak; trim and check wrapper.
+		if !containsSubstring(result.prompt, "<speak>") {
+			t.Errorf("expected <speak> wrapper, got %q", result.prompt)
+		}
+		if !containsSubstring(result.prompt, "</speak>") {
+			t.Errorf("expected </speak> wrapper, got %q", result.prompt)
+		}
+		if len(result.strippedTags) != 1 {
+			t.Errorf("expected 1 strippedTag, got %d: %v", len(result.strippedTags), result.strippedTags)
+		}
+		if !containsSubstring(result.strippedTags[0], "ssa") {
+			t.Errorf("strippedTag[0] should mention 'ssa', got %q", result.strippedTags[0])
+		}
+	})
+
+	t.Run("es_tag_stripped", func(t *testing.T) {
+		// <es .../> must be stripped cleanly.
+		input := `<es cat="happy"/> good morning`
+		result := preprocessMarkup(input)
+		want := "<speak>good morning</speak>"
+		if result.prompt != want {
+			t.Errorf("prompt mismatch:\n  got  %q\n  want %q", result.prompt, want)
+		}
+		if len(result.strippedTags) != 1 {
+			t.Errorf("expected 1 strippedTag, got %d: %v", len(result.strippedTags), result.strippedTags)
+		}
+		if !containsSubstring(result.strippedTags[0], "es") {
+			t.Errorf("strippedTag[0] should mention 'es', got %q", result.strippedTags[0])
+		}
+	})
+
+	t.Run("mixed_anim_and_style", func(t *testing.T) {
+		// Animation tag inner text is kept; audio tag survives; one stripped-tag entry.
+		input := `<anim cat="happy">Sure!</anim> <style set="confident">Here is what I found.</style>`
+		result := preprocessMarkup(input)
+		want := `<speak>Sure! <style set="confident">Here is what I found.</style></speak>`
+		if result.prompt != want {
+			t.Errorf("prompt mismatch:\n  got  %q\n  want %q", result.prompt, want)
+		}
+		if len(result.strippedTags) != 1 {
+			t.Errorf("expected 1 strippedTag (for anim only), got %d: %v", len(result.strippedTags), result.strippedTags)
+		}
+	})
+
+	t.Run("already_has_speak_wrapper", func(t *testing.T) {
+		// Input with existing <speak> must not be double-wrapped.
+		input := `<speak><style set="news">The latest update is ready.</style></speak>`
+		result := preprocessMarkup(input)
+		if result.prompt != input {
+			t.Errorf("prompt should be unchanged when already wrapped:\n  got  %q\n  want %q", result.prompt, input)
+		}
+		if !result.hadSpeakWrapper {
+			t.Errorf("expected hadSpeakWrapper=true")
+		}
+		if len(result.strippedTags) != 0 {
+			t.Errorf("expected no strippedTags, got %v", result.strippedTags)
+		}
+	})
+
+	t.Run("case_insensitive_stripping", func(t *testing.T) {
+		// Tag matching must be case-insensitive: <ANIM .../> should be stripped.
+		input := `<ANIM cat="happy"/> hello`
+		result := preprocessMarkup(input)
+		want := "<speak>hello</speak>"
+		if result.prompt != want {
+			t.Errorf("prompt mismatch:\n  got  %q\n  want %q", result.prompt, want)
+		}
+		if len(result.strippedTags) != 1 {
+			t.Errorf("expected 1 strippedTag for uppercase <ANIM>, got %d: %v", len(result.strippedTags), result.strippedTags)
+		}
+	})
+
+	t.Run("whitespace_collapse", func(t *testing.T) {
+		// After stripping a self-closing tag between words, double-spaces must collapse.
+		input := `word1 <anim cat="x"/> word2`
+		result := preprocessMarkup(input)
+		want := "<speak>word1 word2</speak>"
+		if result.prompt != want {
+			t.Errorf("prompt mismatch:\n  got  %q\n  want %q", result.prompt, want)
+		}
+		if containsSubstring(result.prompt, "  ") {
+			t.Errorf("prompt contains double-space after whitespace collapse: %q", result.prompt)
+		}
+	})
+}

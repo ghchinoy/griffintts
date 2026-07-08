@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Empirical verification for jibo-ykr.6:
+Empirical verification of three jibo-tts-service daemon behaviors:
 1. SpeakingStyle trigger: find the actual field name (if any) for vocal style selection.
 2. /tts_stop: confirm a GET to /tts_stop actually halts PCM byte growth mid-utterance.
 3. <audio name="..."/>: verify inline audio tags in prompt text produce audible output.
@@ -225,7 +225,7 @@ def test_inline_audio():
     return sound_effect_likely
 
 if __name__ == "__main__":
-    print("=== jibo-ykr.6: Verifying SpeakingStyle, /tts_stop, and <audio> tags ===")
+    print("=== Verifying SpeakingStyle, /tts_stop, and <audio> tags ===")
     style_ok   = test_style_trigger()
     stop_ok    = test_tts_stop()
     audio_ok   = test_inline_audio()

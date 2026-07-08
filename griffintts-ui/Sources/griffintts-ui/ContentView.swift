@@ -9,6 +9,12 @@ struct ContentView: View {
     @State private var isNative: Bool = false
     @State private var speedFactor: Double = 1.0
 
+    // Markup authoring state
+    @State private var isMarkupMode: Bool = false
+    @State private var selectedStyle: SpeakingStyle = .neutral
+    @State private var pitchHalftone: Int = 0
+    @State private var durationStretch: Double = 1.0
+
     // Eye animation
     @State private var blinkScaleY: CGFloat = 1.0
     @State private var lookOffset: CGSize = .zero
@@ -26,6 +32,10 @@ struct ContentView: View {
                 prompt: $prompt,
                 speedFactor: $speedFactor,
                 isNative: $isNative,
+                isMarkupMode: $isMarkupMode,
+                selectedStyle: $selectedStyle,
+                pitchHalftone: $pitchHalftone,
+                durationStretch: $durationStretch,
                 isSynthesizing: coordinator.isSynthesizing,
                 audioPlayerIsPlaying: coordinator.audioPlayer?.isPlaying ?? false,
                 onSpeak: triggerSynthesis,
@@ -150,12 +160,11 @@ struct ContentView: View {
     }
 
     // Finds the directory that has both `griffintts/` and `griffintts-ui/`
-    // as siblings — `tools/` inside the jibo monorepo today, or the repo
-    // root once griffintts-ui ships as its own standalone repo alongside
-    // griffintts. This is a fixed structural relationship (the built .app
-    // always ends up at <root>/griffintts-ui/bin/GriffinTTS.app), not a
-    // search for a monorepo-specific marker file, so it resolves correctly
-    // in both contexts without caring which one it's actually running in.
+    // as siblings (the repo root). This is a fixed structural relationship
+    // (the built .app always ends up at
+    // <root>/griffintts-ui/bin/GriffinTTS.app), not a search for a
+    // marker file, so it resolves correctly regardless of where the repo
+    // is cloned.
     private func findGriffinttsRepoRoot() -> URL? {
         guard let exeURL = Bundle.main.executableURL else { return nil }
         // exeURL: <root>/griffintts-ui/bin/GriffinTTS.app/Contents/MacOS/griffintts-ui
@@ -169,9 +178,22 @@ struct ContentView: View {
 
     private func triggerSynthesis() {
         guard !coordinator.isSynthesizing && !prompt.isEmpty else { return }
-        // d4m.8: renamed 't' → 'promptText' (in coordinator, variable is 'prompt' arg)
-        let promptText = prompt
-        logDebug("--- SYNTHESIS TRIGGERED: \"\(promptText)\" speed=\(speedFactor)x native=\(isNative)")
+        let plainPrompt = prompt
+
+        // Build the ESML string when markup mode is on. The CLI's --markup flag
+        // and preprocessMarkup() handle animation-tag stripping; we only generate
+        // audio-channel tags here.
+        let esmlString = buildESML(
+            prompt: plainPrompt,
+            style: selectedStyle,
+            pitchHalftone: pitchHalftone,
+            durationStretch: durationStretch,
+            isMarkupMode: isMarkupMode
+        )
+
+        logDebug("--- SYNTHESIS TRIGGERED: \"\(plainPrompt)\" speed=\(speedFactor)x native=\(isNative) markup=\(isMarkupMode)")
+        if let esml = esmlString { logDebug("--- ESML: \(esml)") }
+
         coordinator.isSynthesizing = true
         coordinator.statusMessage = "Synthesizing..."
         coordinator.statusColor = .synthesizing
@@ -181,6 +203,14 @@ struct ContentView: View {
             coordinator.isSynthesizing = false
             return
         }
-        Task { await coordinator.synthesize(prompt: promptText, isNative: isNative, speedFactor: speedFactor, griffinttsRepoRoot: griffinttsRepoRoot) }
+        Task {
+            await coordinator.synthesize(
+                prompt: plainPrompt,
+                esmlPrompt: esmlString,
+                isNative: isNative,
+                speedFactor: speedFactor,
+                griffinttsRepoRoot: griffinttsRepoRoot
+            )
+        }
     }
 }

@@ -27,13 +27,25 @@ type SpeakRequest struct {
 }
 
 type JSONOutput struct {
-	Status      string `json:"status"`
-	Prompt      string `json:"prompt"`
-	OutputPath  string `json:"output_path"`
-	PromptLen   int    `json:"prompt_length"`
-	Timestamp   string `json:"timestamp"`
-	NativeMode  bool   `json:"native_mode"`
-	DryRun      bool   `json:"dry_run,omitempty"`
+	Status        string   `json:"status"`
+	Prompt        string   `json:"prompt"`
+	OutputPath    string   `json:"output_path"`
+	PromptLen     int      `json:"prompt_length"`
+	Timestamp     string   `json:"timestamp"`
+	NativeMode    bool     `json:"native_mode"`
+	DryRun        bool     `json:"dry_run,omitempty"`
+	MarkupMode    bool     `json:"markup_mode,omitempty"`
+	StrippedTags  []string `json:"stripped_animation_tags,omitempty"`
+}
+
+// markupStrip holds the result of preprocessing an ESML/markup prompt.
+type markupStrip struct {
+	// prompt is the cleaned prompt ready to send to the daemon.
+	prompt string
+	// strippedTags lists animation-channel tags removed (anim, ssa, es).
+	strippedTags []string
+	// hadSpeakWrapper is true if the original input already had a <speak> root.
+	hadSpeakWrapper bool
 }
 
 var (
@@ -43,6 +55,7 @@ var (
 	jsonOut       bool
 	dryRun        bool
 	nativeMode    bool
+	markupMode    bool
 	durationLimit float64
 	speedFactor   float64
 )
@@ -90,6 +103,7 @@ native macOS standalone HTS synthesizer using Jibo's classic en_us model.`,
 	rootCmd.Flags().BoolVarP(&nativeMode, "native", "n", false, "Use the 100% native macOS HTS standalone synthesizer (no containers)")
 	rootCmd.Flags().Float64VarP(&durationLimit, "duration", "d", 0.0, "Crop the output audio to this duration in seconds (0.0 to disable trimming)")
 	rootCmd.Flags().Float64VarP(&speedFactor, "speed", "s", 1.0, "Speaking speed multiplier (0.5 is slow, 2.0 is fast)")
+	rootCmd.Flags().BoolVarP(&markupMode, "markup", "m", false, "Treat input as affective markup (ESML audio tags: style, pitch, duration, break, phoneme, say-as). Animation tags (anim, ssa, es) are stripped with a warning. Container mode only.")
 
 	// Bind flags to Viper
 	viper.BindPFlag("ow", rootCmd.Flags().Lookup("ow"))
@@ -100,6 +114,7 @@ native macOS standalone HTS synthesizer using Jibo's classic en_us model.`,
 	viper.BindPFlag("native", rootCmd.Flags().Lookup("native"))
 	viper.BindPFlag("duration", rootCmd.Flags().Lookup("duration"))
 	viper.BindPFlag("speed", rootCmd.Flags().Lookup("speed"))
+	viper.BindPFlag("markup", rootCmd.Flags().Lookup("markup"))
 
 	viper.SetEnvPrefix("GRIFFINTTS")
 	viper.AutomaticEnv()
@@ -116,6 +131,7 @@ func executeSynthesis(args []string) {
 	isJSON := viper.GetBool("json")
 	isDryRun := viper.GetBool("dry-run")
 	isNative := viper.GetBool("native")
+	isMarkup := viper.GetBool("markup")
 	targetDuration := viper.GetFloat64("duration")
 	speed := viper.GetFloat64("speed")
 
@@ -155,6 +171,29 @@ func executeSynthesis(args []string) {
 				fmt.Print("\033[34m[INFO]\033[0m Utilizing native standalone macOS HTS synthesizer...\n")
 			} else {
 				fmt.Print("[INFO] Utilizing native standalone macOS HTS synthesizer...\n")
+			}
+		}
+		// Markup is a container-mode feature: the native HTS engine has no
+		// MarkupHandler. Strip tags and warn rather than speaking them literally.
+		if isMarkup {
+			ms := preprocessMarkup(prompt)
+			// For native mode, we use the plain stripped text (no <speak> wrapper —
+			// the HTS label pipeline expects clean plain text).
+			innerRe := regexp.MustCompile(`(?i)^\s*<speak\b[^>]*>([\s\S]*)</speak\s*>\s*$`)
+			if m := innerRe.FindStringSubmatch(ms.prompt); len(m) > 1 {
+				prompt = strings.TrimSpace(m[1])
+			} else {
+				prompt = ms.prompt
+			}
+			// Strip any remaining audio-channel tags for the native pipeline
+			anyTagRe := regexp.MustCompile(`<[^>]+>`)
+			prompt = strings.TrimSpace(anyTagRe.ReplaceAllString(prompt, ""))
+			if !isJSON {
+				fmt.Fprintf(os.Stderr, "\033[33m[WARN]\033[0m --markup is a container-mode feature. "+
+					"Markup tags stripped for native HTS pipeline; only plain text will be synthesized.\n")
+				if len(ms.strippedTags) > 0 {
+					fmt.Fprintf(os.Stderr, "       Animation tags stripped: %v\n", ms.strippedTags)
+				}
 			}
 		}
 
@@ -345,6 +384,20 @@ func executeSynthesis(args []string) {
 		startOffset = fi.Size()
 	}
 
+	// Markup preprocessing: strip animation tags, wrap in <speak>, report.
+	var ms markupStrip
+	if isMarkup {
+		ms = preprocessMarkup(prompt)
+		if !isJSON && len(ms.strippedTags) > 0 {
+			if useColor {
+				fmt.Fprintf(os.Stderr, "\033[33m[WARN]\033[0m Animation tags stripped (not renderable offline): %v\n", ms.strippedTags)
+			} else {
+				fmt.Fprintf(os.Stderr, "[WARN] Animation tags stripped (not renderable offline): %v\n", ms.strippedTags)
+			}
+		}
+		prompt = ms.prompt
+	}
+
 	// Trigger synthesis POST request
 	if !isJSON {
 		if useColor {
@@ -356,11 +409,21 @@ func executeSynthesis(args []string) {
 
 	speakURL := fmt.Sprintf("http://%s:%s/tts_speak", targetHost, targetPort)
 	reqBody := SpeakRequest{
-		Prompt:          prompt,
-		Locale:          "en-US",
-		Voice:           "GRIFFIN",
-		Mode:            "TEXT",
-		DurationStretch: speed, // Pass speed factor directly to Jibo's C++ engine!
+		Locale: "en-US",
+		Voice:  "GRIFFIN",
+		Mode:   "TEXT",
+	}
+	if isMarkup {
+		// Markup path: embed the pre-processed markup prompt directly.
+		// The daemon's MarkupHandler parses audio-channel tags (<STYLE>, <PITCH>,
+		// <DURATION>, <BREAK>, <phoneme>, <say-as>) from the prompt field.
+		// duration_stretch is NOT set — the <DURATION> tag controls timing instead
+		// (note: opposite semantics — see prosody_and_affect.md §6).
+		reqBody.Prompt = prompt
+	} else {
+		// Plain-text path: send clean text with optional speed via duration_stretch.
+		reqBody.Prompt = prompt
+		reqBody.DurationStretch = speed // inverse-rate multiplier: higher = faster
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -436,11 +499,13 @@ func executeSynthesis(args []string) {
 
 	if isJSON {
 		output := JSONOutput{
-			Status:     "success",
-			Prompt:     prompt,
-			OutputPath: outWav,
-			PromptLen:  len(prompt),
-			Timestamp:  time.Now().Format(time.RFC3339),
+			Status:       "success",
+			Prompt:       prompt,
+			OutputPath:   outWav,
+			PromptLen:    len(prompt),
+			Timestamp:    time.Now().Format(time.RFC3339),
+			MarkupMode:   isMarkup,
+			StrippedTags: ms.strippedTags,
 		}
 		jsonBytes, _ := json.MarshalIndent(output, "", "  ")
 		fmt.Println(string(jsonBytes))
@@ -450,6 +515,72 @@ func executeSynthesis(args []string) {
 		} else {
 			fmt.Printf("[PASS] Jibo's voice synthesized cleanly and saved to: %s\n", outWav)
 		}
+	}
+}
+
+// preprocessMarkup parses an ESML-annotated prompt and prepares it for the
+// daemon's native markup dialect. It:
+//   - strips animation-only tags (<anim>, <ssa>, <es>) collecting them for
+//     the stripped-tags report, but preserves any inner spoken text
+//   - ensures the prompt is wrapped in <speak>...</speak> for the daemon
+//   - leaves all audio-channel tags (<style>, <pitch>, <duration>, <break>,
+//     <phoneme>, <say-as>) untouched — they ARE the daemon's own dialect
+//
+// The daemon is case-insensitive and mode-agnostic (TEXT and SSML both work),
+// so no case normalisation is applied. See prosody_and_affect.md §3 for the
+// empirical evidence.
+func preprocessMarkup(prompt string) markupStrip {
+	var stripped []string
+
+	// Animation-channel tags to strip. These are processed by the on-robot
+	// JS layer (jibo.embodied.speech.speak → Timeline) and never reach the
+	// daemon; sending them raw causes them to be spoken as literal garbled text.
+	//
+	// Bounded form: <anim cat="happy">spoken text</anim> — keep inner text.
+	// Self-closing form: <anim cat="happy"/> — no inner text, drop entirely.
+	// <es cat="..."/> — always self-closing; maps to SpeakingStyle but that
+	// conversion is done by the JS layer, not the daemon.
+	animTags := []string{"anim", "ssa", "es"}
+
+	result := prompt
+	for _, tag := range animTags {
+		// Self-closing: <tag ... />  — drop entirely, record tag name
+		scRe := regexp.MustCompile(`(?i)<` + tag + `\b[^>]*/\s*>`)
+		if scRe.MatchString(result) {
+			stripped = append(stripped, "<"+tag+"/> (self-closing, dropped)")
+		}
+		result = scRe.ReplaceAllString(result, "")
+
+		// Bounded: <tag ...>inner text</tag> — keep inner text, record tag name
+		boundRe := regexp.MustCompile(`(?i)<` + tag + `\b[^>]*>([\s\S]*?)</` + tag + `\s*>`)
+		if boundRe.MatchString(result) {
+			stripped = append(stripped, "<"+tag+">...</"+tag+"> (bounded, inner text kept)")
+		}
+		result = boundRe.ReplaceAllStringFunc(result, func(m string) string {
+			sub := boundRe.FindStringSubmatch(m)
+			if len(sub) > 1 {
+				return sub[1]
+			}
+			return ""
+		})
+	}
+
+	// Collapse any runs of whitespace introduced by removals
+	wsRe := regexp.MustCompile(`[ \t]{2,}`)
+	result = wsRe.ReplaceAllString(result, " ")
+	result = strings.TrimSpace(result)
+
+	// Ensure the prompt is wrapped in <speak>...</speak>.
+	// The daemon strips this cleanly (Δbytes=0 confirmed in oge.3).
+	hadWrapper := regexp.MustCompile(`(?i)^\s*<speak\b`).MatchString(result)
+	if !hadWrapper {
+		result = "<speak>" + result + "</speak>"
+	}
+
+	return markupStrip{
+		prompt:          result,
+		strippedTags:    stripped,
+		hadSpeakWrapper: hadWrapper,
 	}
 }
 

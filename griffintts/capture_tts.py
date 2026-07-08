@@ -27,7 +27,7 @@ def listen_ws(url, name):
     ws.run_forever()
 
 if __name__ == "__main__":
-    host = "mars-bond-mesquite-cotton.local"
+    host = "mars-bond-mesquite-cotton.local"  # replace with your unit's mDNS hostname
     port = "8089"
     text = "Hi there, I am Griffin, Jibo's voice."
     if len(sys.argv) > 1:

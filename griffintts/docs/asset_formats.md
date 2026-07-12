@@ -342,11 +342,70 @@ symbol and its position, rather than guessing.
 
 ---
 
+## 9. `textnorm/` — text normalization (numbers, dates, currency, abbreviations)
+
+`en_us_world/textnorm/` and `en_us/textnorm/` contain the OpenFST-based
+text-normalization stage — the pipeline step that turns `03/21/1987`
+into "march twenty first nineteen eighty seven" before dictionary
+lookup ever happens.
+
+**Not Thrax.** The natural assumption (`.grm` is Thrax's usual source
+extension) is wrong here — `Main.spec`'s own header comment states
+plainly this is written in **Jibo's own NLU parser grammar format**, the
+same DSL as skill `launch.rule` files (`$Var`, `{_out='...'}`, `[optional]`,
+`*`/`+` repetition, `~0.1` weighted-dispreference penalties, and
+`$handle:Name` cross-file references) — confirmed by direct comparison
+against real `launch.rule` syntax elsewhere in this project. It compiles
+to OpenFST via a tool named `grm2fst` in the comments (not present on
+disk in this checkout).
+
+**Four files, three roles:**
+
+| File | Role |
+|---|---|
+| `rules.grm` | The shared body of normalization sub-rules (1621 lines): numbers, currency, dates, time, measures, addresses, phone numbers, web/domains, math, abbreviations, roman numerals, letter-spelling, overrides, special characters. Its own header: *"The main rules file - to be cat'ed to the toprule files."* |
+| `Main.spec` | A thin "toprule" entry point defining `TopRule`, pulling in `rules.grm`'s definitions. Compiles to `Main.fst` — the general normalizer. |
+| `Digit.spec` | A second, separate toprule for a standalone digit→word converter, referenced from `Main.spec`/`rules.grm` via `$handle:Digit` and split out specifically "to ensure the final FST size is manageable." Compiles to `Digit.fst`. |
+| `Main.tmp` / `Digit.tmp` | The literal concatenation of each `.spec` + `rules.grm` (confirmed byte-for-byte via diff) — the actual intermediate source text fed to the compiler. `Main.fst`/`Digit.fst` are OpenFST's compiled output (confirmed via `file`: `OpenFst binary FST data, fst type: vector, arc type: standard`). |
+
+**Confirmed scope, from `rules.grm`'s own top-level rule list:**
+
+```
+NormRules = $Numbers{...} | $Abbreviation{...}~1 | $Measures{...} | $Dates{...} |
+            $Time{...} | $Website{...} | $SpecChar{...} | $Address{...} |
+            $PhoneNo{...} | $Maths{...}~0.1 | $Overrides{...};
+```
+
+That's the exhaustive list: numbers (cardinal/ordinal/decimal), currency
+(24 currencies), dates, clock time, measurement units, US addresses,
+phone numbers, URLs/domains, arithmetic expressions, and a long tail of
+abbreviation/acronym/roman-numeral special cases (`FBI`→spelled out
+letter names, `Dr.`→`doctor`, etc.) — confirmed against `textnorm.test`
+(a 301-line `NAME ||| INPUT ||| EXPECTED_OUTPUT` test-case file bundled
+alongside the grammar).
+
+**What it does not do**: no character-substitution decoding of any
+kind. The only character-level machinery in `rules.grm` is a pure
+identity letter mapping (used for spelling out acronyms like `FBI`) and
+digit→word conversion (`Numbers`) — nothing maps a digit standing in for
+a letter (leetspeak-style, e.g. "3" meaning "e") back to that letter. A
+mixed alphanumeric token that isn't a recognized number/date/measure
+format falls through to the catch-all `Anything = $* {_out=_parsed}` —
+passed to dictionary/G2P unmodified. Confirmed both by reading the
+grammar and empirically: synthesizing a deliberately leetspeak-style
+token takes noticeably longer than the natural-English equivalent
+(consistent with character-by-character G2P/spelling fallback, not
+normalization), not shorter or crashing.
+
+`en_us` vs. `en_us_world`: nearly identical; `en_us` is an earlier,
+smaller build of the same grammar (missing some later additions).
+
+---
+
 ## Cross-references
 
 - `docs/architecture.md` — the `.voice` acoustic model format (HTS
-  version header, `STREAM_TYPE:MCP,LF0,BAP,LPF`) and `textnorm/`'s
-  OpenFST text-normalization rules, both out of this doc's scope.
+  version header, `STREAM_TYPE:MCP,LF0,BAP,LPF`), out of this doc's scope.
 - `docs/prosody_and_affect.md` — the full ESML markup dialect (styles,
   pitch, duration, break, phoneme, say-as), empirically measured.
 - `docs/FAQ.md` — on-device editability, the read-only-partition

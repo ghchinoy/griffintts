@@ -167,7 +167,7 @@ bin/griffintts --markup '<anim cat="happy" nonBlocking="true">Sure!</anim> <styl
 
 ### 2. Phoneme Conversion (`--ipa` / `--xsampa`)
 
-Combilex (the phoneme notation `<phoneme ph="...">` expects) isn't widely known outside this specific voice's own assets. If you've found a word's pronunciation on Wiktionary (IPA) or elsewhere in X-SAMPA, convert it directly instead of learning Combilex by hand:
+[Combilex](https://www.cstr.ed.ac.uk/research/projects/combilex/) (the phoneme notation `<phoneme ph="...">` expects) isn't widely known outside this specific voice's own assets. If you've found a word's pronunciation on Wiktionary (IPA) or elsewhere in X-SAMPA, convert it directly instead of learning Combilex by hand:
 
 ```bash
 # From IPA — include a "." at syllable boundaries for accurate syllable splitting

@@ -2,11 +2,15 @@
 
 This document records the reverse-engineering discoveries, technical barriers, and solutions implemented to bring Jibo's original 2017 "Griffin" text-to-speech voice to life locally on macOS.
 
+![Griffin TTS local synthesis architecture](architecture.webp)
+
+*Diagram source: `architecture.dot`. Two parallel paths (container emulation and native HTS) converge into the `griffintts` CLI.*
+
 ---
 
 ## Technical Discoveries on the Live Jibo Unit
 
-Through direct filesystem inspection, library symbol analysis, and log interception on the active robot (`root@mars-bond-mesquite-cotton.local`), we made several crucial architectural findings:
+Through direct filesystem inspection, library symbol analysis, and log interception on the active Jibo robot, we made several crucial architectural findings:
 
 ### 1. Acoustic Model & Streams
 - The model file `/usr/local/share/ttsservice/voices/en_us_world/en_us_world.voice` (27.6MB) uses the standard **HTS (HMM-based Speech Synthesis System) Engine API version 1.0** header.

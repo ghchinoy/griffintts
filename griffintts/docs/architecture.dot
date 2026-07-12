@@ -1,0 +1,54 @@
+digraph GriffinTTS {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", shape=box, style="rounded,filled", fillcolor="#f5f5f5"];
+    edge [fontname="Helvetica", fontsize=10];
+
+    labelloc="t";
+    label="Griffin TTS local synthesis architecture and execution strategy (Jul 2026)";
+
+    subgraph cluster_extraction {
+        label="Extraction Phase — READ-ONLY and Safe";
+        style="filled"; fillcolor="#eef6ff"; fontsize=11;
+        live_jibo [label="Live Jibo Robot\n(SSH, read-only SCP)", shape=cylinder, fillcolor="#cfe2ff"];
+        voice_model [label="en_us_world.voice\n(27.6MB HTS voice model)", fillcolor="#fff3cd"];
+        frontend_assets [label="Text Frontend Assets\n(OpenFST .fst/.spec/.grm files,\ndictionary/G2P/Combilex lexicon)", fillcolor="#fff3cd"];
+
+        live_jibo -> voice_model [label="SCP extraction"];
+        live_jibo -> frontend_assets [label="SCP extraction"];
+    }
+
+    subgraph cluster_path_b {
+        label="Path B — QEMU ARM32 Emulation (primary high-fidelity path)";
+        style="filled"; fillcolor="#fdfcf0"; fontsize=11;
+        qemu [label="QEMU User-Mode ARM32\n(qemu-arm inside container)", fillcolor="#ffe8a1"];
+        libjibo_tts [label="libJiboTTSService.so\n+ jibo-tts-service binary\n(ELF armv7 from Jibo)", fillcolor="#ffe8a1"];
+        alsa_redirect [label="ALSA TTSOut intercept\n(.asoundrc file plugin\nwrites raw PCM to disk)", fillcolor="#ffd685"];
+        path_b_out [label="WAV Audio Output\n(WORLD vocoder — high-fidelity)", shape=note, fillcolor="#ffd685"];
+
+        qemu -> libjibo_tts [label="runs"];
+        voice_model -> libjibo_tts [label="loads"];
+        frontend_assets -> libjibo_tts [label="loads"];
+        libjibo_tts -> alsa_redirect [label="writes audio"];
+        alsa_redirect -> path_b_out;
+    }
+
+    subgraph cluster_path_a {
+        label="Path A — Native macOS Reconstruction (experimental fallback)";
+        style="filled"; fillcolor="#f9f2fc"; fontsize=11;
+        hts_world_mac [label="hts_engine_API\n(compiled natively on macOS)", fillcolor="#e8daff"];
+        text_frontend [label="Go label generator\n(Combilex dict + phonetizeText\nproducing full-context labels)", fillcolor="#e8daff"];
+        path_a_out [label="WAV Audio Output\n(en_us 3-stream — audible flutter\ndue to 31-coeff LPF mismatch)", shape=note, fillcolor="#dca8ff"];
+
+        voice_model -> hts_world_mac [label="loaded directly (HTS 1.0 format)"];
+        text_frontend -> hts_world_mac [label="provides full-context labels"];
+        hts_world_mac -> path_a_out [label="synthesizes"];
+    }
+
+    tool_griffintts [label="griffintts CLI\nText in → WAV out\n(default: Path B container mode;\n--native: Path A standalone)", shape=component, fillcolor="#d4edda", penwidth=2];
+
+    path_b_out -> tool_griffintts [label="container mode (default)", style=dashed];
+    path_a_out -> tool_griffintts [label="--native mode", style=dashed];
+
+    quality_note [label="Path B: Jibo's actual libJiboTTSService.so vocoder runs;\nWORLD 4-stream voice (MCP, LF0, BAP, LPF) — full fidelity.\nPath A: standard hts_engine_API cannot decode the\n31-coeff LPF — produces audible flutter.", shape=note, fillcolor="#ffd2d2"];
+}

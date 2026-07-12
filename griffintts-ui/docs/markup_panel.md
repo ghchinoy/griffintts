@@ -1,12 +1,7 @@
 # griffintts-ui — Markup Authoring Panel
 
-**Status: implemented** (`bd jibo-oge.8`, closed 2026-07-07). This document
-was originally written as a pre-implementation design brief (`markup_panel_design.md`);
-it has been rewritten here as the architecture reference and user guide for
-what actually shipped, now that the design is complete. If you're looking
-for how the panel is *supposed* to behave, this reflects the real code in
-`SpeechDesignerPanel.swift`, `ContentView.swift`, and
-`SynthesisCoordinator.swift` — not a proposal.
+The Speech Designer sidebar builds Jibo's affective ESML markup from GUI
+controls, layered on top of (or fully replacing) a plain-text prompt.
 
 ---
 
@@ -162,10 +157,3 @@ These are deliberate exclusions, not gaps waiting to be filled:
 
 No changes were needed to `SharedTypes.swift`, `JiboEyeView.swift`, or
 `griffintts_ui.swift`.
-
----
-
-*Originally written as a pre-implementation design brief. Rewritten
-2026-07-13 to reflect the shipped implementation once `bd jibo-oge.8` closed
-— the design and the code had drifted apart (this doc still said "DESIGN
-ONLY — not yet implemented" after the feature had been complete for days).*

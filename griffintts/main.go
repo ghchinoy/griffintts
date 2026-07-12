@@ -445,8 +445,10 @@ func executeSynthesis(args []string) {
 		os.Exit(1)
 	}
 
-	// Wait briefly for disk flushing inside the container
-	time.Sleep(100 * time.Millisecond)
+	// Wait for synthesis to complete before reading PCM.
+	// Query /tts_token_times for actual synthesis duration, then add headroom.
+	synthDur := fetchSynthesisDuration(targetHost, targetPort, reqBody)
+	time.Sleep(synthDur + 150*time.Millisecond)
 
 	// Extract exclusively the newly written PCM data starting from startOffset (avoiding sparse null silence holes!)
 	tempRaw, err := os.CreateTemp("", "griffintts-*.raw")
@@ -650,6 +652,77 @@ func printErrorAndHint(errMsg string, hintMsg string) {
 	}
 }
 
+// fetchSynthesisDuration POSTs reqBody to /tts_token_times and returns the
+// duration of the synthesized utterance as reported by the daemon. On any
+// error (network, non-200, malformed JSON) it silently returns the 200 ms
+// fallback so the caller can always proceed safely.
+func fetchSynthesisDuration(host, port string, reqBody SpeakRequest) time.Duration {
+	const fallback = 200 * time.Millisecond
+
+	tokenURL := fmt.Sprintf("http://%s:%s/tts_token_times", host, port)
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fallback
+	}
+
+	resp, err := http.Post(tokenURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fallback
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fallback
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fallback
+	}
+
+	// Try shape 1: top-level array of token objects — []map[string]interface{}
+	var tokens []map[string]interface{}
+	if err := json.Unmarshal(body, &tokens); err != nil {
+		// Try shape 2: {"tokens": [...]}
+		var wrapper map[string]interface{}
+		if err2 := json.Unmarshal(body, &wrapper); err2 != nil {
+			return fallback
+		}
+		raw, ok := wrapper["tokens"]
+		if !ok {
+			return fallback
+		}
+		// Re-marshal / unmarshal the inner array
+		inner, err2 := json.Marshal(raw)
+		if err2 != nil {
+			return fallback
+		}
+		if err3 := json.Unmarshal(inner, &tokens); err3 != nil {
+			return fallback
+		}
+	}
+
+	if len(tokens) == 0 {
+		return fallback
+	}
+
+	var maxEndMs float64
+	for _, tok := range tokens {
+		for _, key := range []string{"end", "end_ms"} {
+			if v, ok := tok[key]; ok {
+				if f, ok := v.(float64); ok && f > maxEndMs {
+					maxEndMs = f
+				}
+			}
+		}
+	}
+
+	if maxEndMs <= 0 {
+		return fallback
+	}
+	return time.Duration(maxEndMs) * time.Millisecond
+}
+
 // Phone parsing, dictionary, and full-context HTS label generation helper routines
 
 func parseDictionary(dictPath string) (map[string][]string, error) {
@@ -701,6 +774,13 @@ func parseDictionary(dictPath string) (map[string][]string, error) {
 }
 
 func phonetizeText(text string, dictMap map[string][]string) []string {
+	// Pre-handle explicit pause tokens before punctuation stripping.
+	// [lpau] and [spau] would have their brackets stripped by the regex below,
+	// leaving bare "lpau"/"spau" which may not be in the word dictionary.
+	// Replace them now so they survive as plain words and are injected directly.
+	text = strings.ReplaceAll(text, "[lpau]", " lpau ")
+	text = strings.ReplaceAll(text, "[spau]", " spau ")
+
 	// Clean text: strip punctuation and split by whitespace into words
 	reg, _ := regexp.Compile("[^a-zA-Z0-9'\\s]+")
 	cleaned := reg.ReplaceAllString(text, "")
@@ -711,6 +791,11 @@ func phonetizeText(text string, dictMap map[string][]string) []string {
 
 	for _, w := range rawWords {
 		if w == "" {
+			continue
+		}
+		// Direct pause phone injection — bypass dictionary for explicit pause tokens.
+		if w == "lpau" || w == "spau" {
+			phones = append(phones, w)
 			continue
 		}
 		if phList, ok := dictMap[w]; ok {

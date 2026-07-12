@@ -1,8 +1,12 @@
 package main
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestParseDictionary(t *testing.T) {
@@ -279,4 +283,165 @@ func TestPreprocessMarkup(t *testing.T) {
 			t.Errorf("prompt contains double-space after whitespace collapse: %q", result.prompt)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// TestFetchSynthesisDurationFallback — unit tests for fetchSynthesisDuration.
+// ---------------------------------------------------------------------------
+
+func TestFetchSynthesisDurationFallback(t *testing.T) {
+	req := SpeakRequest{Prompt: "hello", Locale: "en-US", Voice: "GRIFFIN", Mode: "TEXT"}
+
+	t.Run("returns_max_end_from_array", func(t *testing.T) {
+		// Server returns an array of token objects; we expect the max "end" value.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `[{"start":0,"end":1200},{"start":1200,"end":2800}]`)
+		}))
+		defer srv.Close()
+
+		host, port := splitHostPort(srv.URL)
+		dur := fetchSynthesisDuration(host, port, req)
+
+		want := 2800 * time.Millisecond
+		if dur != want {
+			t.Errorf("expected %v, got %v", want, dur)
+		}
+	})
+
+	t.Run("returns_max_end_ms_field", func(t *testing.T) {
+		// Server uses "end_ms" instead of "end".
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `[{"start_ms":0,"end_ms":3500}]`)
+		}))
+		defer srv.Close()
+
+		host, port := splitHostPort(srv.URL)
+		dur := fetchSynthesisDuration(host, port, req)
+
+		want := 3500 * time.Millisecond
+		if dur != want {
+			t.Errorf("expected %v, got %v", want, dur)
+		}
+	})
+
+	t.Run("returns_max_end_from_wrapper_object", func(t *testing.T) {
+		// Server returns {"tokens": [...]} wrapper shape.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `{"tokens":[{"start":0,"end":1000},{"start":1000,"end":4200}]}`)
+		}))
+		defer srv.Close()
+
+		host, port := splitHostPort(srv.URL)
+		dur := fetchSynthesisDuration(host, port, req)
+
+		want := 4200 * time.Millisecond
+		if dur != want {
+			t.Errorf("expected %v, got %v", want, dur)
+		}
+	})
+
+	t.Run("server_returns_500_falls_back", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+
+		host, port := splitHostPort(srv.URL)
+		dur := fetchSynthesisDuration(host, port, req)
+
+		const fallback = 200 * time.Millisecond
+		if dur != fallback {
+			t.Errorf("expected fallback %v on 500, got %v", fallback, dur)
+		}
+	})
+
+	t.Run("malformed_json_falls_back", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `not valid json {{{`)
+		}))
+		defer srv.Close()
+
+		host, port := splitHostPort(srv.URL)
+		dur := fetchSynthesisDuration(host, port, req)
+
+		const fallback = 200 * time.Millisecond
+		if dur != fallback {
+			t.Errorf("expected fallback %v on bad JSON, got %v", fallback, dur)
+		}
+	})
+
+	t.Run("unreachable_server_falls_back", func(t *testing.T) {
+		// Port 1 is reserved and should be unreachable.
+		dur := fetchSynthesisDuration("127.0.0.1", "1", req)
+
+		const fallback = 200 * time.Millisecond
+		if dur != fallback {
+			t.Errorf("expected fallback %v on network error, got %v", fallback, dur)
+		}
+	})
+}
+
+// splitHostPort splits an httptest server URL (e.g. "http://127.0.0.1:54321")
+// into host and port strings suitable for fetchSynthesisDuration.
+func splitHostPort(rawURL string) (host, port string) {
+	// Strip "http://"
+	addr := rawURL
+	if len(addr) > 7 && addr[:7] == "http://" {
+		addr = addr[7:]
+	}
+	for i := len(addr) - 1; i >= 0; i-- {
+		if addr[i] == ':' {
+			return addr[:i], addr[i+1:]
+		}
+	}
+	return addr, "80"
+}
+
+// ---------------------------------------------------------------------------
+// TestPhonetizeTextPauseTokens — Fix 2: [lpau]/[spau] must not be letter-spelled.
+// ---------------------------------------------------------------------------
+
+func TestPhonetizeTextPauseTokens(t *testing.T) {
+	dictMap := map[string][]string{
+		"hello": {"h", "e", "l", "ou"},
+		"world": {"w", "ur", "r", "l", "d"},
+		"done":  {"d", "ah", "n"},
+	}
+
+	input := "Hello [lpau] world [spau] done"
+	phones := phonetizeText(input, dictMap)
+
+	// Expected sequence:
+	//   lpau (leading) | hello-phones | lpau (from [lpau]) | world-phones | spau (from [spau]) | done-phones | lpau (trailing)
+	expected := []string{
+		"lpau",                       // leading
+		"h", "e", "l", "ou",         // hello
+		"lpau",                       // [lpau]
+		"w", "ur", "r", "l", "d",    // world
+		"spau",                       // [spau]
+		"d", "ah", "n",              // done
+		"lpau",                       // trailing
+	}
+
+	if len(phones) != len(expected) {
+		t.Fatalf("expected %d phones, got %d:\n  expected: %v\n  got:      %v",
+			len(expected), len(phones), expected, phones)
+	}
+	for i, ph := range phones {
+		if ph != expected[i] {
+			t.Errorf("index %d: expected %q, got %q\n  full: %v", i, expected[i], ph, phones)
+		}
+	}
+
+	// Additionally verify neither "lpau" nor "spau" was letter-spelled.
+	// Letter-spelling would produce individual character phones like "lletter", "pletter", etc.
+	for _, ph := range phones {
+		if ph == "lletter" || ph == "pletter" || ph == "aletter" || ph == "uletter" || ph == "sletter" {
+			t.Errorf("pause token was letter-spelled (found %q in output): %v", ph, phones)
+		}
+	}
 }

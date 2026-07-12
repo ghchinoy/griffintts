@@ -201,3 +201,4 @@ Since the synthesizer runs as a daemon inside a background container, you can ma
 For detailed reverse-engineering findings, dynamic library dependency maps, and explanations of how we intercepted ALSA using virtual configuration files, see:
 - **[Griffin TTS Technical Architecture & Findings](docs/architecture.md)**
 - **[Prosody and Affect: what the `/tts_speak` API actually controls](docs/prosody_and_affect.md)**
+- **[Voice Asset File Formats: dictionary, phones, G2P, POS, contexts, config — and how they interact with ESML markup](docs/asset_formats.md)**

@@ -58,6 +58,9 @@ var (
 	markupMode    bool
 	durationLimit float64
 	speedFactor   float64
+	ipaInput      string
+	xsampaInput   string
+	noStress      bool
 )
 
 const sharedVolumeDir = "/tmp/griffintts-shared"
@@ -87,9 +90,19 @@ native macOS standalone HTS synthesizer using Jibo's classic en_us model.`,
   griffintts -ow hello.wav "Welcome back."
 
   # Agent-mode JSON output (with dry-run safety validation)
-  griffintts --json --dry-run --native "Validating this text."`,
+  griffintts --json --dry-run --native "Validating this text."
+
+  # Convert an IPA transcription to a ready-to-use ESML phoneme tag (no synthesis)
+  griffintts --ipa "/pɪˈtsɑː/" pizza
+
+  # Same, from X-SAMPA, and paste the output straight into --markup
+  griffintts --xsampa "/pI\"tsA:/" pizza`,
 		Args: cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			if ipaInput != "" || xsampaInput != "" {
+				runPhonemeConvert(args)
+				return
+			}
 			executeSynthesis(args)
 		},
 	}
@@ -104,6 +117,9 @@ native macOS standalone HTS synthesizer using Jibo's classic en_us model.`,
 	rootCmd.Flags().Float64VarP(&durationLimit, "duration", "d", 0.0, "Crop the output audio to this duration in seconds (0.0 to disable trimming)")
 	rootCmd.Flags().Float64VarP(&speedFactor, "speed", "s", 1.0, "Speaking speed multiplier (0.5 is slow, 2.0 is fast)")
 	rootCmd.Flags().BoolVarP(&markupMode, "markup", "m", false, "Treat input as affective markup (ESML audio tags: style, pitch, duration, break, phoneme, say-as). Animation tags (anim, ssa, es) are stripped with a warning. Container mode only.")
+	rootCmd.Flags().StringVar(&ipaInput, "ipa", "", "Convert an IPA transcription to a Combilex <phoneme> ESML tag for the given word and print it (no synthesis). See docs/asset_formats.md.")
+	rootCmd.Flags().StringVar(&xsampaInput, "xsampa", "", "Convert an X-SAMPA transcription to a Combilex <phoneme> ESML tag for the given word and print it (no synthesis).")
+	rootCmd.Flags().BoolVar(&noStress, "no-stress", false, "With --ipa/--xsampa, omit stress digits from the generated tag (the only form independently confirmed against the live daemon; see docs/prosody_and_affect.md §8)")
 
 	// Bind flags to Viper
 	viper.BindPFlag("ow", rootCmd.Flags().Lookup("ow"))
@@ -649,6 +665,74 @@ func printErrorAndHint(errMsg string, hintMsg string) {
 	fmt.Fprintf(os.Stderr, "%s\n", errMsg)
 	if hintMsg != "" {
 		fmt.Fprintf(os.Stderr, "\033[33m%s\033[0m\n", hintMsg)
+	}
+}
+
+// PhonemeConvertOutput is the --json shape for --ipa/--xsampa conversions.
+type PhonemeConvertOutput struct {
+	Status       string `json:"status"`
+	Word         string `json:"word"`
+	Input        string `json:"input"`
+	Notation     string `json:"notation"`
+	PhonemeTag   string `json:"phoneme_tag"`
+	StressDigits bool   `json:"stress_digits"`
+}
+
+// runPhonemeConvert handles --ipa/--xsampa: a pure text-transform that
+// prints a ready-to-use <phoneme ph="..."> ESML tag and exits, without
+// touching the container/native synthesis pipeline at all. Takes exactly
+// one positional argument: the word the phonemes apply to.
+func runPhonemeConvert(args []string) {
+	isJSON := viper.GetBool("json")
+
+	if ipaInput != "" && xsampaInput != "" {
+		printErrorAndHint("Error: --ipa and --xsampa are mutually exclusive.", "")
+		os.Exit(1)
+	}
+	if len(args) != 1 {
+		printErrorAndHint(
+			fmt.Sprintf("Error: --ipa/--xsampa requires exactly one positional argument (the word), got %d.", len(args)),
+			`Usage: griffintts --ipa "/pɪˈtsɑː/" pizza`)
+		os.Exit(1)
+	}
+	word := args[0]
+
+	notation := "ipa"
+	input := ipaInput
+	if xsampaInput != "" {
+		notation = "xsampa"
+		input = xsampaInput
+	}
+
+	syllables, err := convertPhonetic(input, notation)
+	if err != nil {
+		printErrorAndHint(fmt.Sprintf("Error: %v", err),
+			"Proactive Hint: see docs/asset_formats.md for the full supported symbol inventory (41 phones, sourced directly from en_us_world.phones).")
+		os.Exit(1)
+	}
+
+	includeStress := !noStress
+	tag := buildPhonemeTag(word, syllables, includeStress)
+
+	if isJSON {
+		output := PhonemeConvertOutput{
+			Status:       "ok",
+			Word:         word,
+			Input:        input,
+			Notation:     notation,
+			PhonemeTag:   tag,
+			StressDigits: includeStress,
+		}
+		jsonBytes, _ := json.MarshalIndent(output, "", "  ")
+		fmt.Println(string(jsonBytes))
+		return
+	}
+
+	fmt.Println(tag)
+	if includeStress {
+		fmt.Fprintln(os.Stderr, "\033[33mNote:\033[0m stress-digit embedding in <phoneme ph=\"...\"> is not independently"+
+			" confirmed against the live daemon (only the stress-digit-free form has been empirically"+
+			" tested — see docs/prosody_and_affect.md §8). If this doesn't sound right, retry with --no-stress.")
 	}
 }
 

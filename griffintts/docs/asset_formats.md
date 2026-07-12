@@ -57,16 +57,37 @@ This means correctly resolving `record`'s pronunciation requires knowing
 running some form of POS tagging on the input text before dictionary
 lookup, using `.pos` (§3) as (at least part of) that tagger's data.
 
-**Three variants, one actually used**: `.dictionary` (46K lines),
-`.dictionary_full` (198K lines), `.dictionary_trimmed` (50K lines).
-Confirmed via `strings` on the real `libJiboTTSService.so`: the binary's
-string table contains the literal suffix `.dictionary`, but **no**
-occurrence of `.dictionary_full` or `.dictionary_trimmed` anywhere. The
-daemon's config only specifies a directory (`resourcePath`), not a
-filename — the `.dictionary` suffix is compiled into the binary itself.
-`_full` and `_trimmed` are very likely build-time artifacts (a complete
-Combilex export, and a size-optimization experiment, respectively) rather
-than anything the shipped daemon actually reads at runtime.
+**Three variants, one actually used**: `.dictionary` (46K lines, 29,507
+words), `.dictionary_full` (198K lines, 128,776 words),
+`.dictionary_trimmed` (50K lines, 30,089 words). Confirmed via `strings`
+on the real `libJiboTTSService.so`: the binary's string table contains
+the literal suffix `.dictionary`, but **no** occurrence of
+`.dictionary_full` or `.dictionary_trimmed` anywhere — the `.dictionary`
+suffix is compiled into the binary; `resourcePath` only supplies the
+directory.
+
+**What the other two actually are, confirmed by diffing content, not
+guessed from naming.** `.dictionary_full` never uses a placeholder —
+every single word/POS entry has real, fully-specified phonemes, no
+exceptions. Both `.dictionary` and `.dictionary_trimmed` selectively
+replace *some* rarer POS-variant entries with the literal string `G2P`
+in place of phonemes — a flag telling the runtime "predict this one
+live via the G2P transducer (§4) instead of a stored lookup." For
+`guillotined`: `_full` has real phonemes for all three of `JJ`/`VBN`/`VBD`;
+the shipped `.dictionary` keeps `JJ`'s real phonemes but drops `VBN`/`VBD`
+to `G2P`; `.dictionary_trimmed` makes the *identical* substitution for
+the same word. So:
+
+- **`.dictionary_full`** is the master, fully-curated source dictionary
+  — plausibly what `.g2p` (§4) was itself trained on.
+- **`.dictionary`** (what actually ships) is a size/memory-optimized
+  derivation of `_full`, deliberately punting rarer grammatical-form
+  pronunciations to live G2P prediction rather than storing them.
+- **`.dictionary_trimmed`** is a near-identical sibling of the same
+  derivation process (different word count, same substitution pattern)
+  — very likely an earlier or alternate build of the same trimming
+  pipeline, not what ships in this specific binary, but genuine kin
+  rather than an unrelated file.
 
 ---
 
@@ -230,6 +251,94 @@ Two practical consequences:
   replace it.** A `<pitch halftone="+5">` tag adds 5 semitones on top of
   whatever `en_us_world.config`'s own `pitchAddHalfTone = 3.0` baseline
   already contributes — the two aren't in tension, they compose.
+
+---
+
+## 8. IPA / X-SAMPA ↔ Combilex, and the `--ipa`/`--xsampa` converter
+
+Combilex isn't a notation most people know. If you're trying to fix a
+mispronounced word, you're far more likely to find its pronunciation on
+Wiktionary (IPA) than to already know Combilex. `griffintts` can convert
+either IPA or the ASCII-safe X-SAMPA equivalent into a ready-to-use
+`<phoneme ph="...">` tag directly:
+
+```bash
+griffintts --ipa "/ˈpiːt.sə/" pizza
+# <phoneme ph="1 p ii t 0 s ah">pizza</phoneme>
+
+griffintts --xsampa '/pI"tsA:/' pizza
+# <phoneme ph="0 p iy 1 t s aa">pizza</phoneme>
+
+griffintts --ipa "/ˈbɑːnoʊ/" --no-stress bono
+# <phoneme ph="b aa n ou">bono</phoneme>  — matches the confirmed empirical
+#   Bono string in prosody_and_affect.md §8 exactly
+```
+
+This prints the tag and exits — it's a pure text transform, no
+synthesis, no container/native mode involved. Paste the result into a
+larger `--markup` string, or into the dictionary directly if the
+mispronunciation is common enough to fix globally (see `docs/FAQ.md`'s
+on-device-editability entry).
+
+### The crosswalk table
+
+Covers exactly the 41 real phonetic segments in `en_us_world.phones`
+(§2) plus common alternate notations for the same sounds. This is the
+authoritative reference for what `--ipa`/`--xsampa` actually support —
+anything outside this table fails loudly, naming the exact unrecognized
+symbol and its position, rather than guessing.
+
+| Combilex | Example (Wells set) | IPA | X-SAMPA |
+|---|---|---|---|
+| `ii` | fleece (FLEECE) | iː | i: |
+| `iy` | kit (KIT) | ɪ | I |
+| `e` | Ed (DRESS) | ɛ | E |
+| `a` | trap (TRAP) | æ | { |
+| `ah` | comma (COMMA/schwa) | ə | @ |
+| `uh` | strut (STRUT) | ʌ | V |
+| `aa` | palm (PALM) | ɑː | A: |
+| `o` | thought (THOUGHT) | ɔː | O: |
+| `uo` | hood (FOOT) | ʊ | U |
+| `u` | goose (GOOSE) | uː | u: |
+| `ou` | goat (GOAT) | oʊ | @U / oU |
+| `ei` | waist (FACE) | eɪ | eI |
+| `ai` | price (PRICE) | aɪ | aI |
+| `oi` | choice (CHOICE) | ɔɪ | OI |
+| `au` | mouth (MOUTH) | aʊ | aU |
+| `ur` | nurse (NURSE) | ɜːr / ɜː / ɝ | 3:r / 3: |
+| `or` | north (NORTH) | ɔːr / ɔr | O:r / Or |
+| `ah r` | (unstressed -er, e.g. "computer") | ɚ | @r |
+| `p b t d k g m n l h r j w` | (standard) | direct correspondents | direct correspondents |
+| `ng` | ping | ŋ | N |
+| `th` / `dh` | theta / thee | θ / ð | T / D |
+| `f` / `v` / `s` / `z` | (standard) | direct correspondents | direct correspondents |
+| `sh` / `zh` | she / seizure | ʃ / ʒ | S / Z |
+| `tj` / `dj` | cheese / jab | tʃ / dʒ | tS / dZ |
+| `dt` | tentative | ɾ (flap) | 4 |
+| `ls` / `ms` / `ns` | cattle / spasm / garden | l̩ / m̩ / n̩ (syllabic) | l= / m= / n= |
+| `lf` | healed | uncertain — the file's own comment flags this as "arguably not voiced"; not independently resolved here |
+
+### Two honest limitations
+
+- **Syllable boundaries need an explicit `.`** IPA/X-SAMPA don't mark
+  unstressed-syllable boundaries by convention — only stress marks
+  (`ˈ`/`ˌ`, or `"`/`%` in X-SAMPA) signal a break. Without a `.`
+  separator, everything after a stress mark up to the next one (or the
+  end of the word) collapses into a single syllable: `/ˈpiːtsə/` (no dot)
+  produces one syllable `1 p ii t s ah`, while `/ˈpiːt.sə/` (with the
+  dot) produces Jibo's own actual two-syllable dictionary shape, `1 p ii
+  t 0 s ah`. Include `.` at syllable breaks in your source transcription
+  for accurate results.
+- **Stress-digit embedding in `<phoneme ph="...">` itself is not
+  independently confirmed against the live daemon.** Every empirically
+  tested example in `prosody_and_affect.md` §8 omitted stress digits
+  entirely. The converter includes them by default (following the same
+  0/1/2 convention the dictionary file itself uses, and the docs' own
+  "vowel stress: 0=none, 1=primary, 2=secondary" note), since the
+  daemon's phoneme-tag parser plausibly shares logic with its
+  dictionary-entry parser — but this is a reasoned inference, not a
+  confirmed behavior. Use `--no-stress` for the exact stress-digit-free
+  form that **is** confirmed working in every tested case.
 
 ---
 

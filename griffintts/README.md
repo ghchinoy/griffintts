@@ -113,17 +113,24 @@ bin/griffintts --ow emulated_output.wav "Hi there! I am Griffin, Jibo's voice."
 The utility supports full POSIX double-dash flags. You can see all available configurations via `--help`:
 ```text
 Usage of bin/griffintts:
-      --dry-run       Dry run validation without modifying files or triggering synthesis (AX)
-  -h, --help          help for griffintts
-      --host string   TTS container host (default "localhost")
-      --json          Output in machine-readable JSON format (AX)
-  -m, --markup        Treat input as affective markup (audio tags: style, pitch, duration, break,
-                      phoneme, say-as). Animation tags (anim, ssa, es) are stripped with a warning.
-                      Container mode only.
-  -n, --native        Use the 100% native macOS HTS standalone synthesizer (no containers)
-  -o, --ow string     Path to save the synthesized WAV file (default "output.wav")
-  -p, --port string   TTS container port (default "8089")
-  -s, --speed float   Speaking speed multiplier (0.5 is slow, 2.0 is fast) (default 1.0)
+      --dry-run          Dry run validation without modifying files or triggering synthesis (AX)
+  -d, --duration float   Crop the output audio to this duration in seconds (0.0 to disable trimming)
+  -h, --help             help for griffintts
+      --host string      TTS container host (default "localhost")
+      --ipa string       Convert an IPA transcription to a Combilex <phoneme> ESML tag for the
+                         given word and print it (no synthesis). See docs/asset_formats.md.
+      --json             Output in machine-readable JSON format (AX)
+  -m, --markup           Treat input as affective markup (audio tags: style, pitch, duration, break,
+                         phoneme, say-as). Animation tags (anim, ssa, es) are stripped with a warning.
+                         Container mode only.
+  -n, --native           Use the 100% native macOS HTS standalone synthesizer (no containers)
+      --no-stress        With --ipa/--xsampa, omit stress digits from the generated tag (the only
+                         form independently confirmed against the live daemon)
+  -o, --ow string        Path to save the synthesized WAV file (default "output.wav")
+  -p, --port string      TTS container port (default "8089")
+  -s, --speed float      Speaking speed multiplier (0.5 is slow, 2.0 is fast) (default 1.0)
+      --xsampa string    Convert an X-SAMPA transcription to a Combilex <phoneme> ESML tag for the
+                         given word and print it (no synthesis).
 ```
 
 ### 1. Affective Markup (`--markup`)
@@ -158,15 +165,35 @@ bin/griffintts --markup '<anim cat="happy" nonBlocking="true">Sure!</anim> <styl
 
 **Animation tags** (`<anim>`, `<ssa>`, `<es>`) are stripped — these require the robot's on-device animation system and cannot be rendered offline. Inner spoken text from bounded forms (e.g. `<anim cat="happy">Sure!</anim>`) is preserved.
 
+### 2. Phoneme Conversion (`--ipa` / `--xsampa`)
+
+Combilex (the phoneme notation `<phoneme ph="...">` expects) isn't widely known outside this specific voice's own assets. If you've found a word's pronunciation on Wiktionary (IPA) or elsewhere in X-SAMPA, convert it directly instead of learning Combilex by hand:
+
+```bash
+# From IPA — include a "." at syllable boundaries for accurate syllable splitting
+bin/griffintts --ipa "/ˈpiːt.sə/" pizza
+# <phoneme ph="1 p ii t 0 s ah">pizza</phoneme>
+
+# From X-SAMPA (ASCII-safe IPA equivalent)
+bin/griffintts --xsampa '/pI"tsA:/' pizza
+# <phoneme ph="0 p iy 1 t s aa">pizza</phoneme>
+
+# Omit stress digits (the only form independently confirmed against the live daemon)
+bin/griffintts --ipa "/ˈbɑːnoʊ/" --no-stress bono
+# <phoneme ph="b aa n ou">bono</phoneme>
+```
+
+This prints the tag and exits — no synthesis happens. Paste the result into a larger `--markup` string. Supports exactly the 41 phones in Jibo's actual voice inventory; anything else fails loudly, naming the unrecognized symbol and its position rather than guessing. Full crosswalk table and known limitations (syllable-boundary marking, stress-digit confirmation status) in [`docs/asset_formats.md`](docs/asset_formats.md), §8.
+
 **Native mode** (`--native --markup`): markup tags are stripped and only plain text is synthesized. The native HTS pipeline has no markup engine.
 
-### 2. Shell Pipe / Stdin Support
+### 3. Shell Pipe / Stdin Support
 You can pipe text directly into `griffintts` via standard input:
 ```bash
 echo "Piped text is synthesized automatically." | bin/griffintts --native
 ```
 
-### 3. AX (Agent Experience) Output
+### 4. AX (Agent Experience) Output
 If `--json` is specified, all human status prints are suppressed, outputting only clean, machine-readable JSON data. In `--markup` mode the JSON output includes which animation tags were stripped:
 ```bash
 bin/griffintts --json --native --ow native_test.wav "Validating agent-mode."

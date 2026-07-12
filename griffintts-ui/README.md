@@ -2,6 +2,10 @@
 
 A gorgeous, highly interactive macOS desktop application featuring Jibo's iconic animated, blinking vector eye. It provides a visual frontend for Jibo's local speech synthesis, syncing Jibo's facial expressions with the generated audio in real-time.
 
+Like the sibling `griffintts` CLI it wraps, this is a text-to-speech tool
+only — it has no part in speech recognition or understanding spoken
+commands (that's a separate, unrelated Jibo subsystem).
+
 ---
 
 ## Features

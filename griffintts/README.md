@@ -4,6 +4,14 @@ A high-fidelity local CLI speech synthesizer wrapping Jibo's original 2017 "Grif
 
 By leveraging user-mode ARM emulation inside a native macOS container machine, this utility executes Jibo's full text normalization frontend (OpenFST, Combilex lexicon, G2P) and high-fidelity WORLD vocoder acoustic synthesizer offline on macOS.
 
+**Scope**: this is a text-to-speech (TTS) engine only. It takes text (or ESML
+markup) as input and produces spoken audio. It has no involvement in
+understanding spoken language, classifying intent, or deciding what a
+command means — that's natural language understanding (NLU), an entirely
+separate subsystem on Jibo's original stack with no relationship to this
+tool. If you're looking for how Jibo decides *what you asked for*, this
+repo isn't it.
+
 ---
 
 ## Prerequisites

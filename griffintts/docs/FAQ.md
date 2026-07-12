@@ -7,6 +7,18 @@ something is still open it says so.
 
 ---
 
+## Does griffintts understand what I say, or handle commands/intent?
+
+No. griffintts is text-to-speech only — text or ESML markup in, spoken audio
+out. It has no part in speech recognition, intent classification, or command
+routing (natural language understanding, or NLU). That's a separate subsystem
+on Jibo's original stack entirely, unrelated to this tool's code or scope.
+If your text is correct and it doesn't sound right, that's a griffintts
+question; if Jibo did (or didn't) do the right thing in response to a spoken
+command, that's not something this repo has any part in.
+
+---
+
 ## Can Jibo be taught custom pronunciations without modifying the firmware?
 
 Yes, two independent mechanisms exist.

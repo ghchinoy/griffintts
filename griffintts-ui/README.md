@@ -69,3 +69,12 @@ When run from the terminal, the application prints detailed, millisecond-precisi
 [2026-07-04 13:59:33.881] [GriffinUI] [Animation] Animation completed. Timer invalidated.
 ```
 These logs are highly useful for inspecting audio device latency and ensuring perfect, sub-second coordination.
+
+---
+
+## Technical Details
+
+For the Speech Designer's affective-markup panel — how the Style/Pitch/
+Duration/Break controls map to ESML tags, how raw ESML pasted into the
+Prompt field is handled, and the speaking-motion approximation's exact
+architecture — see [`docs/markup_panel.md`](docs/markup_panel.md).

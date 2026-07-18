@@ -11,9 +11,12 @@ import AVFoundation
 //       inverse-rate semantics: higher value = faster speech.
 //
 //   Markup mode (--markup flag on the CLI):
-//     - <style set="...">  — ✅ confirmed; all 7 SpeakingStyle enum values
-//       produce measurable centroid + duration shifts. Tag parsed by
-//       libJiboTTSService.so's MarkupHandler; not the JSON field path.
+//     - <style set="...">  — ✅ confirmed; 6 official SDK styles produce
+//       measurable centroid + duration shifts (5 clearly distinct; `excited`
+//       is a binary artifact, ~10 Hz from neutral, not an official SDK style —
+//       use `enthusiastic` instead). Tag parsed by libJiboTTSService.so's
+//       MarkupHandler; not the JSON field path. MIT HRI2024 ESML SDK source
+//       confirms SSMLStyleTagType enum = 6 styles (no `excited`).
 //     - <pitch halftone="N"> — ✅ confirmed monotonic response.
 //     - <duration stretch="N"> — ✅ confirmed; NOTE inverted vs Speed slider:
 //       stretch > 1.0 = slower, < 1.0 = faster.

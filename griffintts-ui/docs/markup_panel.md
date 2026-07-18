@@ -23,7 +23,7 @@ columns:
    controls below are a convenience builder that wrap whatever is in this
    field, they do not replace manual authoring. See §3.
 2. **Affective Markup** section, visible only when the mode toggle is on:
-   - **Style** picker — the 7 confirmed `SpeakingStyle` enum values.
+   - **Style** picker — the 7 C++ `SpeakingStyle` enum values. Note: the official SDK defines 6 styles; `excited` is a binary artifact indistinguishable from neutral — prefer `enthusiastic`. See `tools/griffintts/docs/prosody_and_affect.md` §4.
    - **Pitch offset** slider — −20 to +20 halftones.
    - **Duration stretch** slider — 0.25× to 3.0×, clearly labeled with its
      inverted-vs-Speed semantics.

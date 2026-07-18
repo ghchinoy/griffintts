@@ -106,18 +106,30 @@ Literal markup tokens present in the binary: `style`, `pitch`, `halftone`, `band
 
 ---
 
-## 4. Speaking Style — ✅ CONFIRMED (5/7 styles measurably distinct)
+## 4. Speaking Style — ✅ CONFIRMED (5/6 official styles measurably distinct)
 
-### Confirmed C++ SpeakingStyle enum values
+### Official SDK style set (6 styles)
 
-`neutral`, `excited`, `confused`, `sheepish`, `confident`, `enthusiastic`, `news`
+Per the MIT HRI2024 ESML SDK reference (Jibo Inc. archive, October 2023), the
+official `SSMLStyleTagType` enum defines exactly **6** supported styles:
+`neutral`, `sheepish`, `confused`, `confident`, `enthusiastic`, `news`.
 
-All seven are compiled into `libJiboTTSService.so`. Invalid style names trigger: `Style (%s) not a valid style! Setting to neutral.`
+> **`excited` is not an official SDK style.** It is compiled into the
+> `libJiboTTSService.so` binary's C++ `SpeakingStyle` enum (7 values total),
+> but it does not appear in the SDK-facing `SSMLStyleTagType` enum confirmed
+> by the MIT source. Our empirical measurement independently confirms why:
+> `excited` produces a ~10 Hz centroid shift, indistinguishable from `neutral`
+> within short-FFT noise. It is a binary artifact — present in the C++ layer
+> but not part of the supported SDK contract. Use `enthusiastic` instead
+> (most distinct: +100 Hz centroid, most consistent across prompt lengths).
+
+All six official styles are compiled into `libJiboTTSService.so`. Invalid
+style names trigger: `Style (%s) not a valid style! Setting to neutral.`
 
 ### Syntax
 
 ```
-<STYLE set="excited">Text to speak.</STYLE>
+<STYLE set="enthusiastic">Text to speak.</STYLE>
 ```
 
 Case-insensitive. `mode` field irrelevant. `<speak>` wrapper optional.
@@ -127,7 +139,7 @@ Case-insensitive. `mode` field irrelevant. `<speak>` wrapper optional.
 | Style | Δduration | ΔRMS | Δcentroid | Verdict |
 |---|---|---|---|---|
 | `neutral` | +0.000s | +4 | +9 Hz | Baseline — no effect vs. plain text, as expected |
-| `excited` | +0.000s | +7 | +10 Hz | ⚠️ MARGINAL — nearly identical to neutral on short FFT window; likely real, use longer prompt |
+| `excited` | +0.000s | +7 | +10 Hz | ⚠️ BINARY ARTIFACT — ~10 Hz; not an official SDK style; indistinguishable from neutral; do not use |
 | `confused` | +0.085s | −18 | +85 Hz | ✅ CONFIRMED |
 | `sheepish` | +0.107s | +5 | +65 Hz | ✅ CONFIRMED |
 | `confident` | +0.064s | −25 | +91 Hz | ✅ CONFIRMED |
@@ -232,7 +244,15 @@ Works for: uppercase/lowercase tags, `mode:TEXT`/`mode:SSML`. Case-insensitive, 
 <speak><phoneme ph="b aa n ou">Bono</phoneme></speak>
 ```
 
-Phoneme notation follows the Combilex phoneme set (documented in §9). Vowel stress: 0=none, 1=primary, 2=secondary.
+Phoneme notation follows the Combilex phoneme set (documented in §9). Vowel
+stress markers: `0`=none, `1`=primary. **Do not use stress marker `2`
+(secondary stress) in `<phoneme ph="...">` tags** — the MIT HRI2024 ESML SDK
+reference explicitly states secondary stress is not supported at the tag level.
+(Stress marker `2` does appear in the `.dictionary` file format for lexicon
+entries, where the pipeline handles it — but that is a different code path from
+the `<phoneme>` tag's inline pronunciation override.) Use `--no-stress` in
+`griffintts` to omit stress digits entirely, which is the confirmed-working
+form for all tested empirical examples.
 
 ### Empirical result
 
@@ -291,7 +311,7 @@ The emulated `jibo-tts-service` daemon crashes with `Poco::SystemException` + SI
 | Automatic prosody from G2P/HTS context | ✅ Confirmed (structural) | No parameters needed; inherent to acoustic model |
 | `duration_stretch` JSON field | ✅ Confirmed, inverted semantics | Use as `baseline / value` (speed-rate multiplier) |
 | `pitch`, `pitchBandwidth`, `volume`, `whisper` JSON fields | ❌ Disconfirmed | No measurable effect; dead paths in this build |
-| `<STYLE set="...">` markup | ✅ Confirmed (5/7 styles measurably distinct) | `confused`, `sheepish`, `confident`, `enthusiastic`, `news` confirmed; `excited` marginal; see §4 |
+| `<STYLE set="...">` markup | ✅ Confirmed (5/6 official styles measurably distinct) | `confused`, `sheepish`, `confident`, `enthusiastic`, `news` confirmed; `excited` is a binary artifact (not an official SDK style), indistinguishable from neutral; see §4 |
 | `<PITCH halftone/band/add/mult>` markup | ✅ Confirmed (all 4 subtypes) | Monotonic, directionally correct response; see §5 |
 | `<DURATION stretch/set>` markup | ✅ Confirmed | **Opposite direction** to `duration_stretch` JSON field; `set=` is per-phoneme seconds; see §6 |
 | `<BREAK size="...">` markup | ✅ Confirmed — real silence | Scales with requested value; NOT spoken literally; see §7 |
@@ -322,6 +342,12 @@ The emulated `jibo-tts-service` daemon crashes with `Poco::SystemException` + SI
 - **Documentation**: [OpenFST Library](http://www.openfst.org/)
 - **Key Paper**: Allauzen, C., et al. (2007). *OpenFst: A General and Efficient Weighted Finite-State Transducer Library.* CIAA.
 
+### 5. MIT HRI2024 ESML SDK Reference (Jibo Inc. Archive)
+
+- **Role**: Official ESML SDK documentation, independently validated. Produced from `localhost:8000/docs/embodied-speech.html` (Jibo Inc. internal docs server), captured 2023-10-12 by the MIT Media Lab's Personal Robotics Group for the HRI2024 Jibo workshop.
+- **URL**: `https://hri2024.jibo.media.mit.edu/` (Speak-Tweak docs, ESML reference)
+- **Key confirmations for this document**: Official style set = 6 (`neutral`, `sheepish`, `confused`, `confident`, `enthusiastic`, `news`); `excited` absent from the SDK enum; stress marker `2` not supported in `<phoneme>` tags; `<phoneme>` confirmed working on live networked Jibo units by an independent team.
+
 ### 4. Edinburgh Combilex Lexicon & G2P
 - **Role**: Jibo's dictionary and letter-to-sound mappings.
 - **Documentation**: [CSTR Combilex Project Page](https://www.cstr.ed.ac.uk/research/projects/combilex/)
@@ -333,7 +359,7 @@ The emulated `jibo-tts-service` daemon crashes with `Poco::SystemException` + SI
 
 1. **`<audio>`/`<audioBreak>` inline sound effects**: the markup parser tokens exist in the binary; actual playback depends on asset banks not yet extracted from the robot. (The question of where ESML animation tags are processed is now resolved — see §10.)
 
-2. **`<excited>` style measurability**: Δcentroid ~10 Hz on the test prompt, within short-FFT noise. Likely real but needs a longer prompt or full-audio FFT to isolate cleanly.
+2. **`excited` style — resolved**: Δcentroid ~10 Hz, within short-FFT noise, and confirmed NOT an official SDK style per the MIT HRI2024 ESML reference (Jibo Inc. archive). The binary includes it as a C++ `SpeakingStyle` enum value but it is absent from the SDK-facing `SSMLStyleTagType` enum. Do not use it; use `enthusiastic` instead.
 
 3. **`PostFilterMap` DSP switches**: if not pre-recorded clips, are they real-time filters applied only when a skill calls a body-service/expression API in parallel with speech, rather than through `jibo-tts-service` at all?
 

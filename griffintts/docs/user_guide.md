@@ -131,14 +131,18 @@ bin/griffintts --markup --ow style_confused.wav \
 
 Listen for: slower than neutral, pitch shifted up (uncertainty registers as higher centroid), questioning quality.
 
-**excited** — marginal, needs longer text
+**excited** — binary artifact, not recommended
 
 ```bash
 bin/griffintts --markup --ow style_excited.wav \
   '<style set="excited">I just discovered something and it is the most remarkable thing I have encountered in all of my operational experience.</style>'
 ```
 
-Listen for: difficult to distinguish from neutral on short text; use a longer phrase (as above) to give the acoustic model more material to express the style. See `docs/prosody_and_affect.md` §4 for the measurement note.
+**Do not use `excited` in production ESML.** It is not an official SDK style —
+the MIT HRI2024 ESML SDK reference (Jibo Inc. archive) lists exactly 6 styles;
+`excited` is absent. Empirically: ~10 Hz centroid shift, indistinguishable from
+neutral even on long prompts. Use `enthusiastic` instead, which is the most
+acoustically distinct official style. See `docs/prosody_and_affect.md` §4.
 
 ---
 

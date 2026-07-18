@@ -30,7 +30,9 @@ Fields, left to right:
    digit (a POS tag never does; a syllable field always starts with one).
 3. **One field per syllable**, each formatted as `<stress> <phoneme>
    <phoneme> ...` — stress is `0` (none), `1` (primary), or `2`
-   (secondary); phonemes use the Combilex/ARPABET-derived set.
+   (secondary); phonemes use the Combilex/ARPABET-derived set. Note: the
+   `2` (secondary stress) digit is valid in this dictionary file format, but
+   is **not supported** in the `<phoneme ph="...">` ESML tag — see §8.
 
 Decoding the example: `pizza` → syllable 1 `1 p ii t` (primary stress,
 "p-ii-t") + syllable 2 `0 s ah` (unstressed, "s-ah") → **PEET-sah**.
@@ -329,16 +331,16 @@ symbol and its position, rather than guessing.
   dot) produces Jibo's own actual two-syllable dictionary shape, `1 p ii
   t 0 s ah`. Include `.` at syllable breaks in your source transcription
   for accurate results.
-- **Stress-digit embedding in `<phoneme ph="...">` itself is not
-  independently confirmed against the live daemon.** Every empirically
-  tested example in `prosody_and_affect.md` §8 omitted stress digits
-  entirely. The converter includes them by default (following the same
-  0/1/2 convention the dictionary file itself uses, and the docs' own
-  "vowel stress: 0=none, 1=primary, 2=secondary" note), since the
-  daemon's phoneme-tag parser plausibly shares logic with its
-  dictionary-entry parser — but this is a reasoned inference, not a
-  confirmed behavior. Use `--no-stress` for the exact stress-digit-free
-  form that **is** confirmed working in every tested case.
+- **Stress-digit embedding in `<phoneme ph="...">` — use only `0` and `1`;
+  do not use `2`.** The `.dictionary` file format uses `0` (none),
+  `1` (primary), and `2` (secondary) stress digits for lexicon entries.
+  However, the MIT HRI2024 ESML SDK reference (Jibo Inc. archive) explicitly
+  states that secondary stress marker `2` is **not supported** at the
+  `<phoneme>` tag level. Every empirically tested example in
+  `prosody_and_affect.md` §8 also omitted stress digits entirely.
+  **Use `--no-stress`** for the confirmed-working stress-digit-free form.
+  If stress digits are desired, use only `0` and `1`; never `2` in a
+  `<phoneme ph="...">` attribute.
 
 ---
 

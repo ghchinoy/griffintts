@@ -412,12 +412,12 @@ and Kokoro-82M on identical text:
 
 | System | Character fidelity | Latency (offline) | Affect control |
 |---|---|---|---|
-| **Griffin** (emulated container) | Reference — this *is* Jibo's voice | ~2.9–3.1s (emulation overhead; on-robot likely faster) | 7 named styles, 4 pitch subtypes, duration, break, phoneme |
+| **Griffin** (emulated container) | Reference — this *is* Jibo's voice | ~2.9–3.1s (emulation overhead; on-robot likely faster) | 6 official named styles, 4 pitch subtypes, duration, break, phoneme |
 | **Gemini 2.5 Flash TTS** (cloud) | Warm and naturalistic, but generic; wrong timbre, slower pacing | ~10–12s cloud round trip | Free-form style prompt — flexible but not a discrete reproducible API |
 | **Kokoro-82M** (local) | Generic, clean, no Jibo character | ~1.7–1.9s on CPU | None — single fixed voice, no style control |
 
-Griffin's specific combination of synthetic-but-warm timbre, 7 named speaking
-styles, and the full markup affect dialect is Jibo's actual voice. No tested
+Griffin's specific combination of synthetic-but-warm timbre, 6 official named
+speaking styles, and the full markup affect dialect is Jibo's actual voice. No tested
 candidate reproduces it. The verdict: "the quality ceiling exists (Gemini, Kokoro)
 but the character-fidelity bar is not cleared by either."
 

@@ -206,7 +206,27 @@ table). When triggered at the appropriate timestamp, the JS layer calls
 `startEffect(name, param)` over the `/tts_effects` WebSocket, which causes the
 daemon to play the corresponding `-tts.wav` file from `effectsDir`.
 
-### 4.3 `<ssa>` Tag — Channel 2 (Animation Layer, Not Daemon)
+### 4.3 `<sfx>` Tag — Channel 2 (Animation Layer, Third Audio Category)
+
+The MIT HRI2024 ESML SDK reference (Jibo Inc. archive) identifies `sfx` as its
+own `AssetNodeType` (`AssetNodeType["SFX"] = "SFX"`), making it a **third**
+distinct audio category alongside `<ssa>` and `<audioBreak>`. This aligns with
+the `sfx-only` filter metadata already present in `jibo-embodied-dialog` (§4.4
+below). The ESML SDK PDF has its own cheat-sheet section for SFX alongside SSA.
+
+The AnimDB audio directory on the live unit confirms the `sfx/` subdirectory
+exists under `jibo-anim-db-animations/audio/` (see §5), with at least:
+- `sfx_drumroll_01.wav`
+- `sfx_sparkles_01.wav`
+- `sfx_sparkles_02.wav`
+
+The `<sfx>` tag's syntax and available category names have **not** been
+empirically tested. By analogy to `<ssa cat="...">`, it likely takes a `cat=`
+or similar attribute referencing AnimDB sound-effect clip names. This is an
+open investigation gap — it may support `<sfx cat="drumroll"/>` style syntax,
+but this is unconfirmed.
+
+### 4.5 `<ssa>` Tag — Channel 2 (Animation Layer, Not Daemon)
 
 The `<ssa cat="...">` tag is processed entirely by the JS Timeline in `@be/be`,
 not by the TTS daemon. It is NOT equivalent to `<audioBreak>` — they operate
@@ -216,6 +236,7 @@ at different layers:
 |---|---|---|---|
 | `<audioBreak src="..."/>` | Channel 1 audio | `libJiboTTSService.so` `MarkupHandler` | **Yes** (in prompt text) |
 | `<ssa cat="...">` | Channel 2 animation | `jibo.embodied.speech` Timeline in `@be/be` | **No** (stripped by JS) |
+| `<sfx>` | Channel 2 animation | `jibo.embodied.speech` Timeline in `@be/be` | **No** (stripped by JS) |
 
 The `<ssa>` categories (`laughing`, `thinking`, `hello`, etc.) are drawn from
 the Jibo Animation Database, not from the TTS `effectsDir`. They trigger
@@ -224,7 +245,7 @@ coordinated paralinguistic behaviors (body movement + audio) via AnimDB.
 The `effectsDir` sound bank is specifically for the `<audioBreak>` / `<audio>`
 tags and the `startEffect()` API — the "Jibonics" vocalization clips.
 
-### 4.4 Animation Metadata Tags for Sound-Effect Filtering
+### 4.6 Animation Metadata Tags for Sound-Effect Filtering
 
 From `jibo-embodied-dialog` (lines 992–1277), the Timeline uses metadata tags
 to filter which audio/animation tracks play with which content:
@@ -238,9 +259,15 @@ ANIM: '!ssa-only, !sfx-only',   // line 1276 — blocks SSA and SFX from anim tr
 SSA:  'ssa-only',                // line 1277 — SSA-specific track
 ```
 
-This confirms the `ssa-only` metadata label is used on AnimDB clips that are
-purely audio paralinguistics (the SSA bank), and `sfx-only` for pure sound
-effects. The filtering prevents double-playback when both channels are active.
+This confirms three distinct audio categories at the animation layer:
+- `ssa-only` — AnimDB clips for paralinguistic SSA sounds (`<ssa cat="...">`)
+- `sfx-only` — AnimDB clips for the `<sfx>` tag (see §4.3)
+- Neither — body-animation clips with no audio-only constraint (the `ANIM` track)
+
+The filtering prevents double-playback when both channels are active.
+The `<sfx>` tag maps to `sfx-only` clips in the AnimDB — which is why the
+`sfx/` audio directory exists separately from `rom/` (pre-recorded voice) and
+SSA clips in the AnimDB (see §5).
 
 ---
 
@@ -360,4 +387,17 @@ though the WAV files themselves are not yet extracted.
 
 ---
 
-*Written: 2026-07-07. Tasks: `jibo-oge.9`, `jibo-oge.13`.*
+## 10. External Sources
+
+The MIT HRI2024 ESML SDK reference (Jibo Inc. archive, captured 2023-10-12,
+`https://hri2024.jibo.media.mit.edu/`) independently confirms:
+- `<sfx>` exists as `AssetNodeType["SFX"]` — a third animation-layer audio
+  category alongside `<ssa>` and `<audioBreak>` (§4.3 above)
+- The ESML SDK PDF has a dedicated SFX cheat-sheet appendix section
+- `<audioBreak>` and `<audio>` are in the "Audio Tags" section of the SDK docs,
+  architecturally distinct from the "TTS Tags" section — confirming the
+  Channel 1 / Channel 2 split documented in `esml-two-channel-model.md`
+
+---
+
+*Written: 2026-07-07. Tasks: `jibo-oge.9`, `jibo-oge.13`. Updated 2026-07-18: MIT HRI2024 cross-reference — `<sfx>` as third audio category (§4.3), §4.5/§4.6 renumbering, External Sources §10.*
